@@ -64,8 +64,8 @@ An interactive web application for learning and practicing guitar scales. Featur
 
 ### Backend
 - FastAPI (Python)
-- SQLAlchemy
-- SQLite
+- Motor (async MongoDB driver)
+- MongoDB
 
 ## Usage
 
@@ -77,23 +77,26 @@ Try it live: [guitarscaleteacher.vercel.app](https://guitarscaleteacher.vercel.a
 ### Prerequisites
 - Node.js and npm
 - Python 3.12+
+- MongoDB Community Edition (running locally on port 27017)
 
 ### Installation
 
 1. Clone the repository
 ```bash
 git clone https://github.com/SeanSnaider/guitar-scale-tool.git
-cd guitar-scale-tool/Guitar-Project
+cd guitar-scale-tool/Guitar-Scale-Tool
 ```
 
 2. Install frontend dependencies
 ```bash
+cd frontend
 npm install
 ```
 
 3. Set up the backend
 ```bash
 cd backend
+cp .env.example .env
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
@@ -104,11 +107,13 @@ pip install -r requirements.txt
 1. Start the backend server (Terminal 1)
 ```bash
 cd backend
-uvicorn main:app --reload
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+uvicorn app.main:app --reload
 ```
 
 2. Start the frontend development server (Terminal 2)
 ```bash
+cd frontend
 npm run dev
 ```
 
