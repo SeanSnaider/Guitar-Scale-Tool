@@ -19,6 +19,11 @@ venv/
 *.db
 backend/venv/
 
+# Secrets — real env files stay local; commit the .env.example templates instead
+.env
+.env.*
+!.env.example
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
