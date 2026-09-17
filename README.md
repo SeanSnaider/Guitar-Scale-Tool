@@ -109,9 +109,28 @@ suggestions are grounded in what you've actually been playing. The response carr
 fenced JSON block that gets parsed and rendered on the fretboard; follow-up turns keep the
 conversation going.
 
-**Practice Coach.** An Express sidecar streams a multi-turn agent over SSE (`thought`,
-`chunk`, `answer` events), with music-theory lookup and research-paper search available as
-tools mid-stream.
+**Practice Coach.** Describe a goal ("clean up my alternate picking"), pick a skill level,
+and an agentic reasoning loop builds a research-backed practice plan that streams in as
+it's written. This is [FretAgent](https://github.com/SeanSnaider/FretAgent), a separate
+project of mine, vendored into `agent-server/` here.
+
+An Express sidecar runs the Subconscious `tim-claude` engine with four tools:
+
+| Tool | Type | Purpose |
+|---|---|---|
+| `web_search` | platform | Finds techniques, tutorials, and song references |
+| `page_reader` | platform | Reads a promising search result in full |
+| `music_theory_lookup` | local function | Scale notes, progressions, fretboard positions |
+| `research_paper_lookup` | local function | Curated excerpts from practice-methodology research |
+
+Reasoning steps, answer fragments, and the final plan come back over SSE as `thought`,
+`chunk`, and `answer` events, so the reasoning trace renders live in a sidebar next to the
+plan as the agent works.
+
+The version here does one thing the standalone repo can't: before starting a run it pulls
+your learned scales and most-played chords from the FastAPI backend and passes them to the
+agent as context, so the plan is built around what you've actually been practicing. If the
+backend isn't running it silently proceeds without personalization.
 
 **Persistence.** FastAPI + SQLite behind 4 routers and 13 endpoints, storing practice
 sessions, scale mastery, scale attempts, and chord detections. Scoped by a client-generated
@@ -133,7 +152,9 @@ Browser (React SPA)
     │
     ├── REST, X-Session-ID header ──► FastAPI ──► SQLite
     │
-    ├── HTTP + SSE ─────────────────► Agent server (Express) ──► Claude
+    ├── HTTP + SSE ─────────────────► Agent server (Express) ──► Subconscious
+    │                                        ▲                     (tim-claude)
+    │                                        └── tool calls, via ngrok ──┘
     │
     └── direct fetch ───────────────► api.anthropic.com   (ChordAI, user's own key)
 ```
@@ -143,7 +164,7 @@ Browser (React SPA)
 | Frontend | React 19, TypeScript (strict), Zustand v5, Tailwind CSS v4, Vite 7 |
 | Audio | Web Audio API — `AnalyserNode` FFT, custom ADSR synthesis, look-ahead metronome |
 | Backend | FastAPI 0.115, SQLAlchemy 2.0 async, aiosqlite, Pydantic v2, uvicorn |
-| Agent server | Express 5, Subconscious streaming SDK, Zod |
+| Agent server | Express 5, Subconscious SDK (`tim-claude`), Zod — vendored from [FretAgent](https://github.com/SeanSnaider/FretAgent) |
 | LLM | Anthropic Messages API, called directly from the browser |
 | Tests | Vitest + Testing Library (frontend), pytest-asyncio (backend) |
 | Hosting | Render |
@@ -187,15 +208,32 @@ Tables are created on startup; there's no migration step.
 
 **Agent server** — http://localhost:3001
 
+This one needs a tunnel, not just a port. Subconscious runs the reasoning loop on its own
+infrastructure and calls `music_theory_lookup` and `research_paper_lookup` back over HTTP,
+so those endpoints have to be publicly reachable. `TOOL_BASE_URL` pointing at `localhost`
+will leave the agent unable to call its own tools.
+
 ```bash
 cd agent-server
 npm install
-echo "SUBCONSCIOUS_API_KEY=your-key-here" > .env
+cp .env.example .env
+
+ngrok http 3001          # in a separate terminal
+```
+
+Paste the ngrok forwarding URL into `TOOL_BASE_URL` in `agent-server/.env`, add your
+`SUBCONSCIOUS_API_KEY`, then:
+
+```bash
 npm run dev
 ```
 
+A static ngrok domain (available on the free tier) is worth setting up — otherwise the URL
+changes on every restart and you'll be editing `.env` each time.
+
 Vite proxies `/api/agent` and `/api/tools` to this service, so the browser never hits it
-directly.
+directly. The Practice Coach tab is the only thing that needs this server; everything else
+works without it.
 
 ### Environment
 
@@ -205,7 +243,8 @@ directly.
 | `backend/.env` | `DATABASE_URL` | `sqlite+aiosqlite:///./guitar_learning.db` |
 | `backend/.env` | `CORS_ORIGINS` | `http://localhost:5173` |
 | `agent-server/.env` | `SUBCONSCIOUS_API_KEY` | none — required |
-| `agent-server/.env` | `PORT` / `CORS_ORIGIN` / `TOOL_BASE_URL` | `3001` / `http://localhost:5173` / `http://localhost:3001` |
+| `agent-server/.env` | `TOOL_BASE_URL` | `http://localhost:$PORT` — **override with your ngrok URL** |
+| `agent-server/.env` | `PORT` / `CORS_ORIGIN` | `3001` / `http://localhost:5173` |
 
 There is no `ANTHROPIC_API_KEY` variable. The Claude key for ChordAI is pasted into the UI
 at runtime and held in memory only.
