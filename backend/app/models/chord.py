@@ -1,8 +1,9 @@
 """Pydantic models for chord detection history.
 
 Chord records are appended each time the AI detects a chord from the
-microphone. They can be linked to a practice session and are used to
-compute detection statistics.
+microphone. They are owned by the browser (``X-Session-ID``) that recorded
+them, can be linked to a practice session, and are used to compute that
+browser's detection statistics.
 """
 from datetime import datetime
 
@@ -81,7 +82,7 @@ class ChordStatsResponse(BaseModel):
     Attributes:
         most_common: Top chords ranked by detection frequency.
         detection_by_quality: Counts and average confidence per quality.
-        total_detections: Total number of chord records in the database.
+        total_detections: Total number of the caller's chord records.
     """
 
     most_common: list[ChordCountItem]

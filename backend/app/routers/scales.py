@@ -3,6 +3,10 @@
 Implements the attempt recording business logic (consecutive correct,
 learned threshold, stickiness) and query routes for mastery documents.
 
+Mastery is tracked per browser: each ``X-Session-ID`` has its own mastery
+row per scale key and its own attempt history, and every route only reads
+or writes the caller's rows.
+
 Business rules for is_learned:
 - A scale becomes learned when consecutive_correct >= 3 AND bpm >= 120.
 - Once learned, is_learned is permanently True (sticky).
@@ -16,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import ScaleAttemptRow, ScaleMastery, get_database
+from ..dependencies import get_session_id
 from ..models.common import ApiResponse
 from ..models.scale import (
     ScaleAttempt,
@@ -41,8 +46,8 @@ def _serialize_mastery(
 
     Args:
         row: ORM row from the scale_mastery table.
-        attempt_rows: All ScaleAttemptRow rows for this scale_key, ordered
-            oldest first.
+        attempt_rows: The owning browser's ScaleAttemptRow rows for this
+            scale_key, ordered oldest first.
 
     Returns:
         A validated ScaleMasteryResponse instance.
@@ -70,12 +75,13 @@ def _serialize_mastery(
 
 
 async def _fetch_attempts(
-    db: AsyncSession, scale_key: str
+    db: AsyncSession, session_id: str, scale_key: str
 ) -> list[ScaleAttemptRow]:
-    """Fetch all attempt rows for a given scale_key ordered by attempted_at.
+    """Fetch one browser's attempt rows for a scale, ordered by attempted_at.
 
     Args:
         db: Active async session.
+        session_id: The owning browser's ``X-Session-ID``.
         scale_key: The scale identifier to query.
 
     Returns:
@@ -84,29 +90,56 @@ async def _fetch_attempts(
     return (
         await db.scalars(
             select(ScaleAttemptRow)
-            .where(ScaleAttemptRow.scale_key == scale_key)
+            .where(
+                ScaleAttemptRow.session_id == session_id,
+                ScaleAttemptRow.scale_key == scale_key,
+            )
             .order_by(ScaleAttemptRow.attempted_at)
         )
     ).all()
 
 
+async def _serialize_with_attempts(
+    db: AsyncSession, rows: list[ScaleMastery]
+) -> list[ScaleMasteryResponse]:
+    """Serialise mastery rows, attaching each row's own attempt history.
+
+    Args:
+        db: Active async session.
+        rows: Mastery rows to serialise.
+
+    Returns:
+        One ScaleMasteryResponse per row, in the same order.
+    """
+    result = []
+    for row in rows:
+        attempt_rows = await _fetch_attempts(db, row.session_id, row.scale_key)
+        result.append(_serialize_mastery(row, attempt_rows))
+    return result
+
+
 @router.post("/attempt", response_model=ApiResponse[ScaleAttemptResponse])
 async def record_attempt(
     body: ScaleAttemptCreate,
+    session_id: str = Depends(get_session_id),
     db: AsyncSession = Depends(get_database),
 ) -> ApiResponse[ScaleAttemptResponse]:
-    """Record a single scale practice attempt and update mastery state.
+    """Record a scale practice attempt and update the caller's mastery state.
 
     Business logic applied in order:
-    1. Insert a new ScaleAttemptRow.
+    1. Insert a new ScaleAttemptRow owned by the caller.
     2. If correct and bpm >= 120: increment consecutive_correct.
        Otherwise: reset consecutive_correct to 0.
     3. If the scale is not yet learned and consecutive_correct >= 3:
        set is_learned=True, learned_at=now, just_learned=True.
     4. is_learned is sticky — an incorrect attempt cannot clear it.
 
+    Only the caller's own mastery row for ``scale_key`` is read or
+    updated; other browsers' progress on the same scale is unaffected.
+
     Args:
         body: Attempt details including scale_key, bpm, correct flag.
+        session_id: The caller's ``X-Session-ID``.
         db: Injected SQLAlchemy async session.
 
     Returns:
@@ -116,7 +149,10 @@ async def record_attempt(
     now = datetime.now(timezone.utc)
 
     existing: ScaleMastery | None = await db.scalar(
-        select(ScaleMastery).where(ScaleMastery.scale_key == body.scale_key)
+        select(ScaleMastery).where(
+            ScaleMastery.session_id == session_id,
+            ScaleMastery.scale_key == body.scale_key,
+        )
     )
 
     was_learned = existing.is_learned if existing else False
@@ -139,6 +175,7 @@ async def record_attempt(
         just_learned = True
 
     attempt_row = ScaleAttemptRow(
+        session_id=session_id,
         scale_key=body.scale_key,
         correct=body.correct,
         bpm=body.bpm,
@@ -149,6 +186,7 @@ async def record_attempt(
 
     if existing is None:
         mastery = ScaleMastery(
+            session_id=session_id,
             scale_key=body.scale_key,
             consecutive_correct=new_consecutive,
             is_learned=now_learned,
@@ -169,7 +207,7 @@ async def record_attempt(
     await db.commit()
     await db.refresh(mastery)
 
-    attempt_rows = await _fetch_attempts(db, body.scale_key)
+    attempt_rows = await _fetch_attempts(db, session_id, body.scale_key)
     return ApiResponse(
         success=True,
         data=ScaleAttemptResponse(
@@ -181,11 +219,13 @@ async def record_attempt(
 
 @router.get("/learned", response_model=ApiResponse[list[ScaleMasteryResponse]])
 async def get_learned_scales(
+    session_id: str = Depends(get_session_id),
     db: AsyncSession = Depends(get_database),
 ) -> ApiResponse[list[ScaleMasteryResponse]]:
-    """Return all mastery documents where is_learned is True.
+    """Return the caller's mastery documents where is_learned is True.
 
     Args:
+        session_id: The caller's ``X-Session-ID``.
         db: Injected SQLAlchemy async session.
 
     Returns:
@@ -193,34 +233,35 @@ async def get_learned_scales(
     """
     rows = (
         await db.scalars(
-            select(ScaleMastery).where(ScaleMastery.is_learned == True)  # noqa: E712
+            select(ScaleMastery).where(
+                ScaleMastery.session_id == session_id,
+                ScaleMastery.is_learned == True,  # noqa: E712
+            )
         )
     ).all()
-    result = []
-    for row in rows:
-        attempt_rows = await _fetch_attempts(db, row.scale_key)
-        result.append(_serialize_mastery(row, attempt_rows))
-    return ApiResponse(success=True, data=result)
+    return ApiResponse(success=True, data=await _serialize_with_attempts(db, rows))
 
 
 @router.get("/mastery", response_model=ApiResponse[list[ScaleMasteryResponse]])
 async def get_all_mastery(
+    session_id: str = Depends(get_session_id),
     db: AsyncSession = Depends(get_database),
 ) -> ApiResponse[list[ScaleMasteryResponse]]:
-    """Return all scale mastery documents regardless of learned status.
+    """Return all of the caller's scale mastery documents, learned or not.
 
     Args:
+        session_id: The caller's ``X-Session-ID``.
         db: Injected SQLAlchemy async session.
 
     Returns:
-        ApiResponse containing every mastery record.
+        ApiResponse containing every mastery record the caller owns.
     """
-    rows = (await db.scalars(select(ScaleMastery))).all()
-    result = []
-    for row in rows:
-        attempt_rows = await _fetch_attempts(db, row.scale_key)
-        result.append(_serialize_mastery(row, attempt_rows))
-    return ApiResponse(success=True, data=result)
+    rows = (
+        await db.scalars(
+            select(ScaleMastery).where(ScaleMastery.session_id == session_id)
+        )
+    ).all()
+    return ApiResponse(success=True, data=await _serialize_with_attempts(db, rows))
 
 
 @router.get(
@@ -229,24 +270,30 @@ async def get_all_mastery(
 )
 async def get_mastery_by_key(
     scale_key: str,
+    session_id: str = Depends(get_session_id),
     db: AsyncSession = Depends(get_database),
 ) -> ApiResponse[ScaleMasteryResponse]:
-    """Return the mastery document for a specific scale key.
+    """Return the caller's mastery document for a specific scale key.
 
     Args:
         scale_key: The scale identifier (e.g. "C_major").
+        session_id: The caller's ``X-Session-ID``.
         db: Injected SQLAlchemy async session.
 
     Returns:
         ApiResponse containing the mastery document.
 
     Raises:
-        HTTPException: 404 if no mastery document exists for that key.
+        HTTPException: 404 if the caller has no mastery document for that
+            key (even if another browser does).
     """
     row = await db.scalar(
-        select(ScaleMastery).where(ScaleMastery.scale_key == scale_key)
+        select(ScaleMastery).where(
+            ScaleMastery.session_id == session_id,
+            ScaleMastery.scale_key == scale_key,
+        )
     )
     if row is None:
         raise HTTPException(status_code=404, detail="Scale mastery not found")
-    attempt_rows = await _fetch_attempts(db, scale_key)
+    attempt_rows = await _fetch_attempts(db, session_id, scale_key)
     return ApiResponse(success=True, data=_serialize_mastery(row, attempt_rows))

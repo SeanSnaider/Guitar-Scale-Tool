@@ -3,37 +3,20 @@
 Configures the application lifecycle (SQLAlchemy engine connect/disconnect),
 CORS middleware, and includes all feature routers.  Every router
 requires the ``X-Session-ID`` header via the ``get_session_id``
-dependency which is applied globally through ``include_router``.
+dependency (defined in ``dependencies.py``) which is applied globally
+through ``include_router``; the routers also inject it to scope every
+query to the calling browser.
 """
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .database import connect_db, disconnect_db
+from .dependencies import get_session_id
 from .routers import chords, scales, sessions, stats
-
-
-async def get_session_id(x_session_id: str = Header(...)) -> str:
-    """Extract and validate the client session identifier.
-
-    This dependency is applied to all routers so that every request
-    must supply an ``X-Session-ID`` header.  FastAPI's ``Header(...)``
-    makes the parameter required; a missing header automatically
-    results in a 422 response.
-
-    Args:
-        x_session_id: Value of the ``X-Session-ID`` HTTP header.
-
-    Returns:
-        The raw session ID string.
-
-    Raises:
-        HTTPException: 422 if the header is absent (handled by FastAPI).
-    """
-    return x_session_id
 
 
 @asynccontextmanager

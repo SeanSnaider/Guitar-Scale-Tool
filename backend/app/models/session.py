@@ -6,7 +6,9 @@ tempo, and optional accuracy data.
 """
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from .common import MAX_BPM, MIN_BPM
 
 
 class PracticeSessionCreate(BaseModel):
@@ -18,7 +20,7 @@ class PracticeSessionCreate(BaseModel):
     """
 
     scales_practiced: list[str] = []
-    bpm: int = 120
+    bpm: int = Field(default=120, ge=MIN_BPM, le=MAX_BPM)
 
 
 class PracticeSessionEnd(BaseModel):
@@ -28,7 +30,7 @@ class PracticeSessionEnd(BaseModel):
         accuracy: Optional 0-1 accuracy score recorded by the client.
     """
 
-    accuracy: float | None = None
+    accuracy: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
 class PracticeSessionResponse(BaseModel):

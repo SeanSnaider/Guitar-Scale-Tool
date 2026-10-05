@@ -1,7 +1,8 @@
 """Pydantic models for aggregated user stats.
 
-A single endpoint aggregates data from all collections to produce a
-summary of the user's progress including XP, level, and achievements.
+A single endpoint aggregates the calling browser's sessions and scale
+mastery to produce a summary of its progress including XP, level, and
+achievements.
 """
 from pydantic import BaseModel
 

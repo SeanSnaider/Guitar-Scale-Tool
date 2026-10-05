@@ -1,12 +1,15 @@
 """Pydantic models for scale mastery tracking.
 
-Each scale a user practises has a single mastery document that accumulates
-all attempts. A scale is considered "learned" once the user achieves three
-consecutive correct attempts at or above 120 BPM.
+Each scale a browser (``X-Session-ID``) practises has a single mastery
+document for that browser that accumulates its attempts. A scale is
+considered "learned" once the user achieves three consecutive correct
+attempts at or above 120 BPM.
 """
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from .common import MAX_BPM, MIN_BPM
 
 
 class ScaleAttemptCreate(BaseModel):
@@ -19,8 +22,8 @@ class ScaleAttemptCreate(BaseModel):
         practice_session_id: Optional ID of the containing session.
     """
 
-    scale_key: str
-    bpm: int
+    scale_key: str = Field(min_length=1)
+    bpm: int = Field(ge=MIN_BPM, le=MAX_BPM)
     correct: bool
     practice_session_id: str | None = None
 

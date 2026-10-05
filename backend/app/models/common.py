@@ -10,6 +10,14 @@ from pydantic import BaseModel
 
 T = TypeVar("T")
 
+# Tempo bounds shared by every request that carries a BPM. They mirror the
+# metronome's slider range in the frontend (MetronomePanel / AudioControlsShelf).
+MIN_BPM = 20
+MAX_BPM = 300
+
+# Upper bound for the ``limit`` query parameter on paginated list endpoints.
+MAX_PAGE_LIMIT = 100
+
 
 class PaginationMeta(BaseModel):
     """Metadata attached to paginated list responses.
