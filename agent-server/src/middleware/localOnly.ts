@@ -13,7 +13,7 @@
  *   2. No forwarding header (X-Forwarded-For / Forwarded) is present.
  *      ngrok's agent runs on this machine, so tunnelled requests arrive
  *      from 127.0.0.1 — but ngrok always adds X-Forwarded-For. The Vite dev
- *      proxy (frontend/vite.config.ts) does NOT add it, because http-proxy's
+ *      proxy (Guitar-Scale-Tool/vite.config.ts) does NOT add it, because http-proxy's
  *      `xfwd` option defaults to false and is not enabled there.
  *
  * Header presence (not its value) is what matters: a forwarding header can be

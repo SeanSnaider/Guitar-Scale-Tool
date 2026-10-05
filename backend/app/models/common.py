@@ -11,7 +11,7 @@ from pydantic import BaseModel
 T = TypeVar("T")
 
 # Tempo bounds shared by every request that carries a BPM. They mirror the
-# metronome's slider range in the frontend (MetronomePanel / AudioControlsShelf).
+# metronome's slider range in the frontend (AudioControlsShelf).
 MIN_BPM = 20
 MAX_BPM = 300
 

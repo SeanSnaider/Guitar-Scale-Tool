@@ -136,8 +136,8 @@ backend isn't running it silently proceeds without personalization.
 sessions, scale mastery, scale attempts, and chord detections. Scoped by a client-generated
 `X-Session-ID` header — no accounts, no auth, local-first.
 
-**Tests.** 318 Vitest cases on the frontend and 50 async pytest cases against an in-memory
-SQLite database on the backend.
+**Tests.** 379 Vitest cases on the frontend, 110 async pytest cases against an in-memory
+SQLite database on the backend, and 87 Vitest cases on the agent server.
 
 Audio synthesis is hand-rolled Web Audio (ADSR envelopes, no Tone.js), and the metronome
 uses look-ahead scheduling so it doesn't drift at high BPM.
@@ -187,8 +187,11 @@ cd Guitar-Scale-Tool
 
 **Frontend** — http://localhost:5173
 
+The web app lives in `Guitar-Scale-Tool/` inside the repo; that folder is also the Vercel
+project's Root Directory.
+
 ```bash
-cd frontend
+cd Guitar-Scale-Tool
 npm install
 npm run dev
 ```
@@ -239,7 +242,7 @@ works without it.
 
 | Where | Variable | Default |
 |---|---|---|
-| `frontend` | `VITE_API_URL` | `http://localhost:8000` |
+| `Guitar-Scale-Tool` (frontend) | `VITE_API_URL` | `http://localhost:8000` |
 | `backend/.env` | `DATABASE_URL` | `sqlite+aiosqlite:///./guitar_learning.db` |
 | `backend/.env` | `CORS_ORIGINS` | `http://localhost:5173` |
 | `agent-server/.env` | `SUBCONSCIOUS_API_KEY` | none — required |
@@ -252,8 +255,9 @@ at runtime and held in memory only.
 ### Tests
 
 ```bash
-cd frontend && npm test          # vitest run
+cd Guitar-Scale-Tool && npm test # vitest run (frontend)
 cd backend && pytest             # pytest-asyncio, in-memory SQLite
+cd agent-server && npm test      # vitest run (agent server)
 ```
 
 Detection needs microphone permission. Works best with a direct audio interface, but a
