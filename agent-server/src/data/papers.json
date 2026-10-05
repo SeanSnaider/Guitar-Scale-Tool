@@ -1,0 +1,182 @@
+[
+  {
+    "id": "ericsson-1993-dp-definition",
+    "text": "Deliberate practice is a structured training activity designed specifically to improve performance, distinguished from both casual play and routine work. It has four defining characteristics: the task is well-defined and pitched at an appropriate difficulty level just beyond current ability, the learner receives immediate and informative feedback on results, the activity provides repeated opportunities to perform the task, and there are clear opportunities to identify and correct errors. Crucially, deliberate practice is not inherently enjoyable. It demands sustained concentration and effortful engagement, which is why it differs fundamentally from simply spending time with an instrument. A guitarist who plays through favorite songs for an hour has not done an hour of deliberate practice; a guitarist who works on a specific technique they cannot yet execute, listens carefully for errors, and adjusts has.",
+    "metadata": {
+      "source_id": "ericsson-1993",
+      "source_title": "The Role of Deliberate Practice in the Acquisition of Expert Performance",
+      "authors": "Ericsson, Krampe, Tesch-Römer",
+      "year": 1993,
+      "venue": "Psychological Review",
+      "bucket": "practice_science",
+      "theme": "deliberate_practice_definition",
+      "concepts": ["deliberate practice", "feedback", "task difficulty", "focused attention"],
+      "applies_to": ["session_design", "exercise_selection", "user_education"]
+    }
+  },
+  {
+    "id": "ericsson-1993-daily-limits",
+    "text": "Sustained deliberate practice is cognitively expensive and cannot be maintained indefinitely within a single day. Studies of expert musicians consistently find that even elite performers rarely engage in more than about four hours of true deliberate practice per day, and most accomplish their daily practice in two or three focused sessions of roughly sixty to ninety minutes, separated by rest. Beyond this ceiling, the quality of practice degrades sharply, and additional time produces diminishing or even negative returns due to fatigue and reinforcement of sloppy execution. For learners building a practice schedule, this implies that two thirty-minute focused sessions are more valuable than a single unfocused two-hour session, and that recovery time between sessions is part of the training process rather than time wasted.",
+    "metadata": {
+      "source_id": "ericsson-1993",
+      "source_title": "The Role of Deliberate Practice in the Acquisition of Expert Performance",
+      "authors": "Ericsson, Krampe, Tesch-Römer",
+      "year": 1993,
+      "venue": "Psychological Review",
+      "bucket": "practice_science",
+      "theme": "daily_practice_limits",
+      "concepts": ["fatigue", "session length", "recovery", "diminishing returns"],
+      "applies_to": ["session_design", "weekly_planning", "schedule_generation"]
+    }
+  },
+  {
+    "id": "contextual-interference-blocked-vs-random",
+    "text": "Practice schedules can be organized either in blocks, where the learner repeats the same exercise many times before switching, or in interleaved fashion, where different exercises are rotated within a session. Blocked practice typically produces faster improvement during the practice session itself and feels more productive to the learner, but interleaved or random practice produces substantially better retention and transfer when the skill is tested later. This counterintuitive effect, known as contextual interference, occurs because interleaving forces the learner to repeatedly retrieve and reconstruct each skill rather than executing it on autopilot, which strengthens the underlying motor and cognitive representations. For a guitarist, this means that practicing one scale for twenty minutes feels effective but produces weaker long-term gains than rotating between three scales in shorter blocks within the same twenty minutes.",
+    "metadata": {
+      "source_id": "lage-2019-contextual-interference",
+      "source_title": "Skill Acquisition is Enhanced by Reducing Trial-To-Trial Repetition",
+      "authors": "Lage et al.",
+      "year": 2019,
+      "venue": "bioRxiv",
+      "bucket": "practice_science",
+      "theme": "interleaved_vs_blocked_practice",
+      "concepts": ["contextual interference", "interleaving", "retention", "motor learning"],
+      "applies_to": ["session_design", "exercise_ordering", "weekly_planning"]
+    }
+  },
+  {
+    "id": "wright-2012-mrcp-guitar-training",
+    "text": "Movement-related cortical potentials measured by EEG show that the brain becomes more efficient at preparing motor commands as a skill is learned. In a five-week study, non-musicians learning the G major scale on guitar were measured at week one and week five. By week five, the amplitude of late pre-movement brain activity had decreased significantly, indicating that less neural effort was required to prepare each note. This is direct neurological evidence that what feels like muscle memory is actually a measurable shift in how the brain plans movement: practiced movements draw on automated motor programs rather than effortful, deliberate construction. For practice planning, this supports the value of consistent repetition of foundational patterns like scales and chord changes early in a learner's development, since these become the substrate that more complex playing draws on.",
+    "metadata": {
+      "source_id": "wright-2012-mrcp",
+      "source_title": "Reduced Motor Cortex Activity during Movement Preparation following a Period of Motor Skill Practice",
+      "authors": "Wright, Holmes, Di Russo, Loporto, Smith",
+      "year": 2012,
+      "venue": "PLOS ONE",
+      "bucket": "practice_science",
+      "theme": "motor_automation",
+      "concepts": ["motor learning", "automation", "muscle memory", "neuroplasticity"],
+      "applies_to": ["beginner_curriculum", "fundamentals_justification", "user_education"]
+    }
+  },
+  {
+    "id": "major-scale-construction",
+    "text": "The major scale is constructed from a fixed pattern of intervals between consecutive notes: whole, whole, half, whole, whole, whole, half. Starting from any root note and applying this pattern produces the major scale in that key. For example, starting from C produces C-D-E-F-G-A-B-C, with no sharps or flats; starting from G produces G-A-B-C-D-E-F#-G, with one sharp. The seven scale degrees are numbered with Roman numerals or scale-degree numbers and have functional names: tonic (1), supertonic (2), mediant (3), subdominant (4), dominant (5), submediant (6), and leading tone (7). Understanding the major scale as an interval pattern rather than a fixed set of notes is essential for guitarists because it makes the scale transposable to any starting fret on the fretboard using the same shape.",
+    "metadata": {
+      "source_id": "open-music-theory-major-scale",
+      "source_title": "Open Music Theory: The Major Scale",
+      "authors": "Hughes, Lavengood, Shaffer (eds.)",
+      "year": 2023,
+      "venue": "Open Music Theory (CC-BY-SA)",
+      "bucket": "theory_primitives",
+      "theme": "major_scale_intervals",
+      "concepts": ["major scale", "intervals", "scale degrees", "transposition"],
+      "applies_to": ["beginner_theory", "fretboard_translation", "key_signatures"]
+    }
+  },
+  {
+    "id": "modes-of-major-scale",
+    "text": "Each of the seven notes of the major scale can serve as the starting point for a distinct mode, producing seven modes that share the same set of notes but differ in their interval patterns relative to the new root. Starting from the first degree gives Ionian, which is the major scale itself. Starting from the second degree gives Dorian, which has a minor third and minor seventh but a major sixth, giving it a slightly brighter character than natural minor. Starting from the third gives Phrygian, identifiable by its flat second. The fourth gives Lydian, with its raised fourth, often described as bright or floating. The fifth gives Mixolydian, which is major with a flat seventh and is heavily used in blues and rock. The sixth gives Aeolian, the natural minor scale. The seventh gives Locrian, which has a diminished fifth and is rarely used as a tonal center. For improvisation, modes provide a way to color a single chord without changing key, since each mode emphasizes a different chord tone as its tonic.",
+    "metadata": {
+      "source_id": "open-music-theory-modes",
+      "source_title": "Open Music Theory: Diatonic Modes",
+      "authors": "Hughes, Lavengood, Shaffer (eds.)",
+      "year": 2023,
+      "venue": "Open Music Theory (CC-BY-SA)",
+      "bucket": "theory_primitives",
+      "theme": "diatonic_modes",
+      "concepts": ["modes", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Aeolian", "Locrian", "modal character"],
+      "applies_to": ["intermediate_theory", "improvisation", "soloing"]
+    }
+  },
+  {
+    "id": "chord-scale-relationships",
+    "text": "In jazz and modern improvisation pedagogy, every chord in a progression can be paired with a parent scale whose notes match the chord's extensions. A Dm7 chord, when extended through the thirteenth, contains the notes D, F, A, C, E, G, and B, which are the same seven notes as D Dorian. This means a soloist playing over Dm7 can use D Dorian as their pitch source. The general rule for diatonic chord-scale matching is that a chord built on the second degree of a major key takes the Dorian mode, the third degree takes Phrygian, the fourth takes Lydian, the fifth takes Mixolydian, the sixth takes Aeolian, and the seventh takes Locrian. When improvising, placing chord tones on strong beats anchors the line to the harmony, while non-chord tones from the scale provide melodic motion between them.",
+    "metadata": {
+      "source_id": "open-music-theory-chord-scale",
+      "source_title": "Open Music Theory: Chord-Scale Theory",
+      "authors": "Hughes, Lavengood, Shaffer (eds.)",
+      "year": 2023,
+      "venue": "Open Music Theory (CC-BY-SA)",
+      "bucket": "theory_primitives",
+      "theme": "chord_scale_pairing",
+      "concepts": ["chord-scale theory", "modal improvisation", "chord tones", "Berklee method"],
+      "applies_to": ["improvisation", "soloing", "jazz_pedagogy", "intermediate_theory"]
+    }
+  },
+  {
+    "id": "caged-system-overview",
+    "text": "The CAGED system is a fretboard navigation framework that uses the five basic open chord shapes — C, A, G, E, and D — as movable templates for understanding the entire neck. Each of these shapes can be barred and shifted up the fretboard to play any major chord, and the five shapes connect in a fixed cyclical order to cover the neck without gaps. For a given key, the five shapes appear in the same CAGED order moving up the neck. Beyond chord voicings, each CAGED shape has an associated scale pattern surrounding it, so a guitarist who knows the five shapes also has five corresponding scale positions for any major key. The system's value is that it converts the abstract grid of the fretboard into five interconnected visual zones, allowing the player to find any chord, arpeggio, or scale position relative to a familiar shape rather than memorizing the neck note by note.",
+    "metadata": {
+      "source_id": "caged-system-foundational",
+      "source_title": "CAGED System for Fretboard Visualization",
+      "authors": "synthesized from common pedagogy (Edwards, Tagliarino, Pickup Music)",
+      "year": null,
+      "venue": "guitar pedagogy literature",
+      "bucket": "fretboard",
+      "theme": "caged_overview",
+      "concepts": ["CAGED", "fretboard visualization", "movable shapes", "scale positions"],
+      "applies_to": ["intermediate_guitar", "fretboard_mastery", "improvisation_setup"]
+    }
+  },
+  {
+    "id": "caged-shape-connections",
+    "text": "The five CAGED shapes are not independent; they interlock in a fixed sequence so that the highest note of one shape becomes the lowest note of the next as you move up the fretboard. For a chord in the key of C, the C shape appears first in open position, followed by the A shape around the third fret, the G shape around the fifth fret, the E shape around the eighth fret, and the D shape around the tenth fret, before returning to the C shape an octave higher. This ordering is always C-A-G-E-D regardless of the key, though the specific frets shift. Practicing the transitions between adjacent shapes — for example, playing a scale that begins in the C shape and ends in the A shape — builds the connective fretboard knowledge that distinguishes a player stuck in boxes from one who can move fluidly across the neck.",
+    "metadata": {
+      "source_id": "caged-shape-connections",
+      "source_title": "Connecting CAGED Shapes Across the Neck",
+      "authors": "synthesized from common pedagogy",
+      "year": null,
+      "venue": "guitar pedagogy literature",
+      "bucket": "fretboard",
+      "theme": "caged_transitions",
+      "concepts": ["CAGED", "shape connections", "position shifts", "fretboard fluency"],
+      "applies_to": ["intermediate_guitar", "advanced_fretboard", "soloing_fluency"]
+    }
+  },
+  {
+    "id": "pentatonic-shapes-fretboard",
+    "text": "The minor pentatonic scale contains five notes: root, minor third, fourth, fifth, and minor seventh. On the guitar, it is most commonly learned in five connected positions across the neck, each spanning roughly four frets. The first and most widely taught shape places the root on the sixth string with the index finger; the remaining four shapes follow sequentially up the neck, with each shape sharing notes with its neighbors so they connect seamlessly. The minor pentatonic is often the first scale taught to electric guitarists because it works over a wide range of harmonic contexts in blues, rock, and pop, and because two of its five shapes share fingerings with the broader CAGED scale patterns. Mastery typically begins with one shape played cleanly in time, then expands to connecting two adjacent shapes, before eventually covering all five.",
+    "metadata": {
+      "source_id": "pentatonic-fretboard-positions",
+      "source_title": "Pentatonic Scale Positions on Guitar",
+      "authors": "synthesized from common pedagogy",
+      "year": null,
+      "venue": "guitar pedagogy literature",
+      "bucket": "fretboard",
+      "theme": "pentatonic_positions",
+      "concepts": ["minor pentatonic", "scale shapes", "blues", "beginner soloing"],
+      "applies_to": ["beginner_guitar", "blues_rock_curriculum", "first_scale"]
+    }
+  },
+  {
+    "id": "curriculum-sequencing-survey",
+    "text": "A 2020 survey of college music theory faculty published in the Journal of Music Theory Pedagogy found broad consensus on the order in which core theory topics are introduced. Pitch fundamentals, intervals, and triad construction are nearly universally covered in the first semester. Seventh chords are introduced in the first or second semester by most programs. More advanced pitch collections — including modes, pentatonic scales, and whole-tone or octatonic scales — are typically deferred until later semesters, with most programs introducing modes around the fourth semester. This convergence across institutions is useful as a sequencing baseline for any structured theory curriculum: triads before sevenths, sevenths before extended harmonies, and the major and minor scales firmly established before introducing modal or symmetric scales. For a guitarist, this maps roughly to learning chord construction and basic progressions before tackling modal improvisation or jazz harmony.",
+    "metadata": {
+      "source_id": "jmtp-2020-curriculum-survey",
+      "source_title": "Survey of Music Theory Curriculum Sequencing",
+      "authors": "Journal of Music Theory Pedagogy, Vol. 34",
+      "year": 2020,
+      "venue": "Journal of Music Theory Pedagogy",
+      "bucket": "curriculum",
+      "theme": "topic_sequencing",
+      "concepts": ["curriculum design", "topic order", "pedagogical progression"],
+      "applies_to": ["plan_generation", "long_term_roadmap", "skill_progression"]
+    }
+  },
+  {
+    "id": "beginner-guitar-progression",
+    "text": "A common pedagogical progression for beginning electric guitarists, drawn from widely used method books and standard curricula, sequences skills in the following rough order: open chords (E, A, D, G, C, Em, Am, Dm) and basic strumming patterns; power chords and palm muting; the minor pentatonic scale in one position; basic barre chords and movable shapes; the major scale and its modes in one position; the remaining pentatonic positions and CAGED system; chord construction from scales and basic music theory; intermediate techniques such as bending, vibrato, and hammer-ons and pull-offs; and finally improvisation over progressions using scale-chord matching. Each stage assumes fluency at the previous one rather than mere familiarity. A planning agent should treat 'fluency' as the gating criterion — the learner can perform the skill cleanly, in time, without conscious thought — rather than 'has been introduced to.'",
+    "metadata": {
+      "source_id": "beginner-guitar-curriculum",
+      "source_title": "Standard Beginner Electric Guitar Progression",
+      "authors": "synthesized from common method books (Hal Leonard, Berklee Press)",
+      "year": null,
+      "venue": "guitar pedagogy literature",
+      "bucket": "curriculum",
+      "theme": "beginner_skill_sequence",
+      "concepts": ["skill progression", "fluency criteria", "beginner curriculum", "gating"],
+      "applies_to": ["plan_generation", "beginner_assessment", "milestone_definition"]
+    }
+  }
+]
