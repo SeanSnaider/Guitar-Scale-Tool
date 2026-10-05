@@ -16,13 +16,16 @@
  * selected root + scale using `getScaleNotes` and `SCALES` from musicTheory.
  */
 
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useGuitarStore } from '../store/useGuitarStore';
 import { audioEngine } from '../audio/AudioEngine';
-import { getScaleNotes, SCALES } from '../data/musicTheory';
+import { getAscendingOctaves, getScaleNotes, SCALES } from '../data/musicTheory';
 
 /** Delay between consecutive notes during scale playback (ms). */
 const NOTE_INTERVAL_MS = 250;
+
+/** Octave of the root note for footer playback (guitar-friendly register). */
+const PLAYBACK_START_OCTAVE = 3;
 
 /**
  * FooterInfoBar
@@ -42,7 +45,10 @@ export default function FooterInfoBar(): React.ReactElement {
   } = useGuitarStore();
 
   const scale = SCALES[selectedScale];
-  const scaleNotes = scale ? getScaleNotes(selectedRoot, scale.intervals) : [];
+  const scaleNotes = useMemo(
+    () => (scale ? getScaleNotes(selectedRoot, scale.intervals) : []),
+    [selectedRoot, scale],
+  );
   const scaleName = scale ? `${selectedRoot} ${scale.name}` : selectedRoot;
 
   /** Refs to all pending setTimeout handles so we can cancel them on stop. */
@@ -57,6 +63,12 @@ export default function FooterInfoBar(): React.ReactElement {
     setIsPlayingScale(false);
   }, [setIsPlayingScale]);
 
+  // Cancel pending notes if the footer unmounts mid-playback (e.g. on a tab
+  // switch); otherwise the remaining notes keep sounding.
+  useEffect(() => () => {
+    for (const id of timeoutRefs.current) clearTimeout(id);
+  }, []);
+
   /** Schedule each scale note at 250 ms intervals using setTimeout. */
   const startPlayback = useCallback(() => {
     if (scaleNotes.length === 0) return;
@@ -64,10 +76,10 @@ export default function FooterInfoBar(): React.ReactElement {
     setIsPlayingScale(true);
     timeoutRefs.current = [];
 
-    // Play each note sequentially
-    scaleNotes.forEach((note, index) => {
+    // Play each note sequentially as an ascending line (octave rises past B)
+    getAscendingOctaves(scaleNotes, PLAYBACK_START_OCTAVE).forEach(({ note, octave }, index) => {
       const handle = setTimeout(() => {
-        audioEngine.playNote(note, 4);
+        audioEngine.playNote(note, octave);
       }, index * NOTE_INTERVAL_MS);
       timeoutRefs.current.push(handle);
     });

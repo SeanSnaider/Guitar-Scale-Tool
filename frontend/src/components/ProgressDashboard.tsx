@@ -14,8 +14,9 @@
  *   setActiveTab)
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useGuitarStore } from '../store/useGuitarStore';
+import { parseLearnedScaleKey } from '../store/learnedScaleKey';
 import { SCALES, SCALE_CATEGORIES, type ScaleCategory } from '../data/musicTheory';
 import {
   listSessions,
@@ -246,61 +247,74 @@ export default function ProgressDashboard() {
   const [error, setError] = useState<string | null>(null);
 
   // ---- Local store ----
-  const { userStats, learnedScales, setSelectedScale, setActiveTab } = useGuitarStore();
+  const { userStats, learnedScales, setSelectedRoot, setSelectedScale, setActiveTab } = useGuitarStore();
 
   // ---- Local UI state ----
   const [activeTab, setDashTab] = useState<DashTab>('overview');
+  /** Incremented by the Refresh button to re-run the fetch effect. */
+  const [reloadKey, setReloadKey] = useState(0);
   const [learnedCategoryFilter, setLearnedCategoryFilter] = useState<ScaleCategory | 'all'>('all');
 
-  /** Fetch all remote data in parallel. */
-  const fetchAll = useCallback(async () => {
+  /**
+   * Fetch all remote data in parallel once on mount. State is only updated
+   * from the promise callbacks (never synchronously in the effect body) and
+   * is skipped if the dashboard unmounts before the requests finish.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      getBackendStats(),
+      listSessions(1, 20),
+      listChords(1, 50),
+      getChordStats(),
+      getAllMastery(),
+    ])
+      .then(([statsData, sessionsData, chordsData, chordStatsData, masteryData]) => {
+        if (cancelled) return;
+        setBackendStats(statsData);
+        setSessions(sessionsData.data);
+        setChords(chordsData.data);
+        setChordStats(chordStatsData);
+        setMastery(masteryData);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : 'Failed to load progress data');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
+
+  /** Refresh button handler: show the loading state and refetch everything. */
+  const handleRefresh = () => {
     setLoading(true);
     setError(null);
-    try {
-      const [statsData, sessionsData, chordsData, chordStatsData, masteryData] = await Promise.all([
-        getBackendStats(),
-        listSessions(1, 20),
-        listChords(1, 50),
-        getChordStats(),
-        getAllMastery(),
-      ]);
-      setBackendStats(statsData);
-      setSessions(sessionsData.data);
-      setChords(chordsData.data);
-      setChordStats(chordStatsData);
-      setMastery(masteryData);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to load progress data';
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchAll();
-  }, [fetchAll]);
+    setReloadKey((key) => key + 1);
+  };
 
   /**
-   * Loads a scale onto the fretboard and switches to the Fretboard tab.
+   * Loads a scale (root and type) onto the fretboard and switches to the
+   * Fretboard tab.
    *
+   * @param root     - Root note of the learned scale.
    * @param scaleKey - The SCALES registry key to activate.
    */
-  const handlePracticeScale = (scaleKey: string) => {
+  const handlePracticeScale = (root: string, scaleKey: string) => {
+    setSelectedRoot(root);
     setSelectedScale(scaleKey);
     setActiveTab('fretboard');
   };
 
   // ---- Derived: learned scale entries from the local store Set ----
-  const learnedScaleEntries = Array.from(learnedScales).map((key) => {
-    // Key format: "root-scaleKey-position" e.g. "C-major-1"
-    const parts = key.split('-');
-    const root = parts[0] ?? '';
-    const scaleKey = parts.slice(1, -1).join('-');
-    const position = parts[parts.length - 1] ?? '';
-    const scaleData = SCALES[scaleKey];
-    return { storeKey: key, root, scaleKey, position, scaleData };
-  }).filter((e) => e.scaleData !== undefined);
+  const learnedScaleEntries = Array.from(learnedScales).flatMap((key) => {
+    const parsed = parseLearnedScaleKey(key);
+    if (!parsed) return [];
+    return [{ storeKey: key, ...parsed, scaleData: SCALES[parsed.scaleKey] }];
+  });
 
   const filteredLearnedScales =
     learnedCategoryFilter === 'all'
@@ -369,7 +383,7 @@ export default function ProgressDashboard() {
           Your Progress
         </h2>
         <button
-          onClick={fetchAll}
+          onClick={handleRefresh}
           style={{
             fontSize: '12px',
             color: 'var(--text-muted)',
@@ -620,7 +634,8 @@ export default function ProgressDashboard() {
                         marginTop: '2px',
                       }}
                     >
-                      Position {entry.position} — {entry.scaleData?.category ?? 'unknown'}
+                      {entry.position ? `Position ${entry.position} — ` : ''}
+                      {entry.scaleData?.category ?? 'unknown'}
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -634,7 +649,7 @@ export default function ProgressDashboard() {
                       Tracked from next session
                     </span>
                     <button
-                      onClick={() => handlePracticeScale(entry.scaleKey)}
+                      onClick={() => handlePracticeScale(entry.root, entry.scaleKey)}
                       style={{
                         padding: '5px 12px',
                         fontSize: '12px',

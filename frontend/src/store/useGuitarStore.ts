@@ -12,6 +12,18 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { useShallow } from 'zustand/react/shallow';
+
+/** Every top-level navigation tab. */
+export type AppTab =
+  | 'fretboard'
+  | 'scales'
+  | 'chords'
+  | 'ear-training'
+  | 'reference'
+  | 'progress'
+  | 'chordai'
+  | 'coach';
 
 /** Fretboard display modes — how notes are labelled on the fretboard. */
 export type DisplayMode = 'dots' | 'notes' | 'intervals' | 'patterns';
@@ -161,9 +173,18 @@ export interface GuitarState {
   incrementScalesLearned: () => void;
 
   // ---- Progress ----
-  /** Keys formatted as "root-scale-position". */
+  /** Keys formatted as "root-scale" (see store/learnedScaleKey.ts). */
   learnedScales: Set<string>;
+  /**
+   * Scales that have already paid out their learn reward. XP is never
+   * deducted, so this is what stops toggling a scale off and on from
+   * awarding the reward again.
+   */
+  rewardedScales: string[];
+  /** Adds or removes a learned scale; XP is awarded only the first time. */
   toggleLearnedScale: (key: string) => void;
+  /** Marks a scale learned (awarding XP once); a no-op if already learned. */
+  markScaleLearned: (key: string) => void;
   isScaleLearned: (key: string) => boolean;
 
   // ---- Practice Mode ----
@@ -199,8 +220,8 @@ export interface GuitarState {
   setEarTrainingAnswers: (answers: Array<'correct' | 'incorrect' | 'pending'>) => void;
 
   // ---- Navigation ----
-  activeTab: 'fretboard' | 'scales' | 'chords' | 'ear-training' | 'reference' | 'progress' | 'chordai';
-  setActiveTab: (tab: 'fretboard' | 'scales' | 'chords' | 'ear-training' | 'reference' | 'progress' | 'chordai') => void;
+  activeTab: AppTab;
+  setActiveTab: (tab: AppTab) => void;
 
   // ---- Audio Shelf ----
   /** Whether the slide-up audio controls shelf is visible. */
@@ -246,6 +267,53 @@ const DEFAULT_USER_STATS: UserStats = {
 
 /** XP required per level (linear). */
 const XP_PER_LEVEL = 100;
+
+/** XP awarded the first time each scale is learned. */
+const XP_PER_LEARNED_SCALE = 10;
+
+/**
+ * Formats a date as YYYY-MM-DD in the user's local timezone.
+ *
+ * `toISOString()` would give the UTC date, which rolls over in the evening
+ * for users west of UTC and breaks day-based streaks.
+ *
+ * @param date - The date to format.
+ * @returns The local calendar date, e.g. "2026-10-04".
+ */
+function toLocalDateKey(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+/**
+ * Builds the state patch for adding a scale to the learned set, paying the
+ * learn reward only if this scale has never paid it before.
+ *
+ * @param state - Current store state.
+ * @param key   - Learned-scale key being added.
+ * @returns Partial state with learnedScales and, on first learn, the
+ *          updated userStats and rewardedScales.
+ */
+function learnScalePatch(
+  state: Pick<GuitarState, 'learnedScales' | 'rewardedScales' | 'userStats'>,
+  key: string,
+): Partial<GuitarState> {
+  const learnedScales = new Set(state.learnedScales).add(key);
+  if (state.rewardedScales.includes(key)) return { learnedScales };
+
+  const xp = state.userStats.xp + XP_PER_LEARNED_SCALE;
+  return {
+    learnedScales,
+    rewardedScales: [...state.rewardedScales, key],
+    userStats: {
+      ...state.userStats,
+      xp,
+      level: Math.floor(xp / XP_PER_LEVEL) + 1,
+      totalScalesLearned: state.userStats.totalScalesLearned + 1,
+    },
+  };
+}
 
 /**
  * useGuitarStore
@@ -347,14 +415,14 @@ export const useGuitarStore = create<GuitarState>()(
         }),
       incrementStreak: () =>
         set((state) => {
-          const today = new Date().toISOString().split('T')[0];
+          const today = toLocalDateKey(new Date());
           const lastDate = state.userStats.lastPracticeDate;
 
           let newStreak = state.userStats.currentStreak;
           if (lastDate) {
             const yesterday = new Date();
             yesterday.setDate(yesterday.getDate() - 1);
-            const yesterdayStr = yesterday.toISOString().split('T')[0];
+            const yesterdayStr = toLocalDateKey(yesterday);
 
             if (lastDate === yesterdayStr) {
               newStreak += 1;
@@ -405,19 +473,18 @@ export const useGuitarStore = create<GuitarState>()(
 
       // ---- Progress ----
       learnedScales: new Set<string>(),
+      rewardedScales: [],
       toggleLearnedScale: (key) =>
         set((state) => {
-          const newSet = new Set(state.learnedScales);
-          if (newSet.has(key)) {
-            newSet.delete(key);
-          } else {
-            newSet.add(key);
-            // Award XP for learning a new scale position
-            get().addXP(10);
-            get().incrementScalesLearned();
-          }
-          return { learnedScales: newSet };
+          if (!state.learnedScales.has(key)) return learnScalePatch(state, key);
+          // Un-learning keeps earned XP (by design) but does not re-arm the
+          // reward, so toggling cannot farm XP.
+          const learnedScales = new Set(state.learnedScales);
+          learnedScales.delete(key);
+          return { learnedScales };
         }),
+      markScaleLearned: (key) =>
+        set((state) => (state.learnedScales.has(key) ? state : learnScalePatch(state, key))),
       isScaleLearned: (key) => get().learnedScales.has(key),
 
       // ---- Practice Mode ----
@@ -483,6 +550,7 @@ export const useGuitarStore = create<GuitarState>()(
         userStats: state.userStats,
         // Convert Set → Array for JSON serialisation
         learnedScales: Array.from(state.learnedScales),
+        rewardedScales: state.rewardedScales,
         speedTrainerBpm: state.speedTrainerBpm,
         speedTrainerIncrement: state.speedTrainerIncrement,
         activeTab: state.activeTab,
@@ -492,6 +560,11 @@ export const useGuitarStore = create<GuitarState>()(
         // Rehydrate learnedScales back to a Set after JSON deserialisation
         if (state && Array.isArray(state.learnedScales)) {
           state.learnedScales = new Set(state.learnedScales as unknown as string[]);
+        }
+        // Data saved before rewardedScales existed: every scale already in
+        // the learned set has been paid for.
+        if (state && !Array.isArray(state.rewardedScales)) {
+          state.rewardedScales = Array.from(state.learnedScales);
         }
       },
     }
@@ -506,21 +579,29 @@ export const useGuitarStore = create<GuitarState>()(
 
 /**
  * Returns the currently selected root note and scale name.
+ *
+ * Wrapped in useShallow: under zustand v5 a selector that builds a new
+ * object on every call would otherwise re-render forever.
  */
 export const useSelectedScale = () =>
-  useGuitarStore((state) => ({
-    root: state.selectedRoot,
-    scale: state.selectedScale,
-  }));
+  useGuitarStore(
+    useShallow((state) => ({
+      root: state.selectedRoot,
+      scale: state.selectedScale,
+    }))
+  );
 
 /**
  * Returns display mode settings (how notes are labelled on the fretboard).
+ * Wrapped in useShallow for the same reason as useSelectedScale.
  */
 export const useDisplayOptions = () =>
-  useGuitarStore((state) => ({
-    displayMode: state.displayMode,
-    showNonScaleNotes: state.showNonScaleNotes,
-  }));
+  useGuitarStore(
+    useShallow((state) => ({
+      displayMode: state.displayMode,
+      showNonScaleNotes: state.showNonScaleNotes,
+    }))
+  );
 
 /**
  * Returns the current metronome settings.

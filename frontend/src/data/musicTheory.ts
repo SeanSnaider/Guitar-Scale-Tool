@@ -651,6 +651,89 @@ export const THREE_NPS_POSITIONS: ScalePosition[] = [
   { id: 7, name: 'Pattern 7', startFret: 11, endFret: 15, color: '#DEB887' },
 ];
 
+/**
+ * Semitone offsets of the five CAGED shapes measured from the E shape (root
+ * on the lowest string), in the order they appear moving up the neck:
+ * E, D, C, A, G. Used for scales that are not five-note scales.
+ */
+const CAGED_SHAPE_OFFSETS = [0, 2, 5, 7, 9];
+
+/** Frets covered by a CAGED box / pentatonic box (start..start+4). */
+const CAGED_WINDOW_SPAN = 4;
+
+/** Frets covered by a three-notes-per-string pattern (start..start+5). */
+const THREE_NPS_WINDOW_SPAN = 5;
+
+/**
+ * Computes CAGED or 3NPS position windows for the selected key and scale.
+ *
+ * The static CAGED_POSITIONS / THREE_NPS_POSITIONS tables are C-major fret
+ * windows, so on their own they highlight the wrong frets in every other
+ * key. Here Position 1 is anchored on the root's location on the lowest
+ * string and the rest follow the scale up the neck:
+ *  - CAGED + five-note scale: one box per scale degree (A minor pentatonic
+ *    box 1 sits at frets 4-8 around the root on fret 5);
+ *  - CAGED + other scales: the five CAGED shapes, starting from the E shape;
+ *  - 3NPS + seven-note scale: pattern k starts on scale degree k;
+ *  - 3NPS + other scales: the table's offsets, shifted to the key.
+ * Windows are folded into frets 0-11; use isFretInPosition to also match
+ * the same pattern an octave higher.
+ *
+ * @param system     - 'caged' or '3nps'.
+ * @param rootNote   - Root note in sharp spelling.
+ * @param scaleKey   - Key into SCALES.
+ * @param tuningNotes - Note indices per string, lowest string first.
+ * @returns Positions with the same ids, names and colours as the static
+ *          tables but key-relative start/end frets.
+ */
+export function getScalePositions(
+  system: 'caged' | '3nps',
+  rootNote: string,
+  scaleKey: string,
+  tuningNotes: readonly number[]
+): ScalePosition[] {
+  const template = system === 'caged' ? CAGED_POSITIONS : THREE_NPS_POSITIONS;
+  const rootIndex = ALL_NOTES.indexOf(rootNote as NoteName);
+  const intervals = SCALES[scaleKey]?.intervals;
+  if (rootIndex === -1 || !intervals || tuningNotes.length === 0) return template;
+
+  /** Fret of the root on the lowest string (0-11). */
+  const rootFret = (rootIndex - tuningNotes[0] + 12) % 12;
+
+  return template.map((position, i) => {
+    let offset: number;
+    let span = CAGED_WINDOW_SPAN;
+    if (system === 'caged') {
+      // The root sits one fret inside the box (under the second finger).
+      offset = (intervals.length === 5 ? intervals[i] : CAGED_SHAPE_OFFSETS[i]) - 1;
+    } else {
+      span = THREE_NPS_WINDOW_SPAN;
+      offset = intervals.length === 7
+        ? intervals[i]
+        : position.startFret - template[0].startFret;
+    }
+    // A box that would start "behind" the nut (open-string root) starts at 0;
+    // anything past fret 11 folds back an octave.
+    const rawStart = rootFret + offset;
+    const startFret = rawStart < 0 ? 0 : rawStart % 12;
+    return { ...position, startFret, endFret: startFret + span };
+  });
+}
+
+/**
+ * Whether a fret falls inside a position window, including the same
+ * pattern repeated an octave (12 frets) higher.
+ *
+ * @param fret     - Fret number on any string.
+ * @param position - A position from getScalePositions.
+ * @returns True if the fret is inside the window or its octave repeat.
+ */
+export function isFretInPosition(fret: number, position: ScalePosition): boolean {
+  return [fret, fret - 12].some(
+    (f) => f >= position.startFret && f <= position.endFret
+  );
+}
+
 export interface ChordDefinition {
   name: string;
   symbol: string;
@@ -814,30 +897,116 @@ export function midiToFrequency(midi: number): number {
 }
 
 /**
- * Get the octave of a note on the fretboard
+ * Get the scientific-pitch octave of a note on the fretboard (standard tuning).
+ *
+ * Derived from the MIDI number so it can never disagree with playback
+ * (MIDI 60 = C4, so octave = floor(midi / 12) - 1).
+ *
  * @deprecated Use stringFretToMidi + midiToFrequency instead.
+ * @param stringIndex - 0 = low E, 5 = high e.
+ * @param fret        - Fret number (0 = open string).
+ * @returns The octave number, e.g. 3 for C on the low E string's 8th fret.
  */
 export function getNoteOctave(stringIndex: number, fret: number): number {
-  // Base octaves for each string in standard tuning (low E to high e)
-  const baseOctaves = [2, 2, 3, 3, 3, 4];
-  const baseNote = STANDARD_TUNING[stringIndex];
-  const currentNote = (baseNote + fret) % 12;
-
-  let octave = baseOctaves[stringIndex];
-  // If we've wrapped past B to C, increment the octave
-  if (baseNote + fret >= 12) {
-    octave += Math.floor((baseNote + fret) / 12);
-  }
-  // Adjust for where B wraps to C
-  if (currentNote < baseNote % 12 && fret > 0) {
-    octave += 1;
-  }
-
-  return octave;
+  return Math.floor(stringFretToMidi(stringIndex, fret) / 12) - 1;
 }
 
 /**
- * Get diatonic chords for a given scale
+ * Assigns octaves to a list of note names so they form an ascending line.
+ *
+ * Every time a note's pitch class is at or below the previous note's, the
+ * octave increases - so A B C D in octave 3 becomes A3 B3 C4 D4 rather than
+ * dropping back down to C3. Use this for scale runs and root-position chords.
+ *
+ * @param notes       - Note names in sharp spelling (e.g. "A", "C#").
+ * @param startOctave - Octave of the first note.
+ * @returns The notes paired with their octave, in input order. Unknown note
+ *          names are skipped.
+ */
+export function getAscendingOctaves(
+  notes: readonly string[],
+  startOctave: number
+): Array<{ note: string; octave: number }> {
+  const result: Array<{ note: string; octave: number }> = [];
+  let octave = startOctave;
+  let previousIndex = -1;
+
+  for (const note of notes) {
+    const index = ALL_NOTES.indexOf(note as NoteName);
+    if (index === -1) continue;
+    if (previousIndex !== -1 && index <= previousIndex) octave += 1;
+    result.push({ note, octave });
+    previousIndex = index;
+  }
+  return result;
+}
+
+/**
+ * Seven-note parent scale used to harmonise scales that are not themselves
+ * seven-note scales (pentatonics, blues and bebop scales are subsets or
+ * passing-tone extensions of these). Scales without a clear parent, such as
+ * whole-tone or the symmetric diminished scales, have no diatonic harmony.
+ */
+const HARMONY_PARENT_SCALE: Record<string, string> = {
+  major_pentatonic: 'major',
+  minor_pentatonic: 'minor',
+  blues: 'minor',
+  major_blues: 'major',
+  bebop_dominant: 'mixolydian',
+  bebop_major: 'major',
+  bebop_minor: 'dorian',
+};
+
+/** Triad type keyed by "third,fifth" semitone distances above the chord root. */
+const TRIAD_BY_INTERVALS: Record<string, string> = {
+  '4,7': 'major',
+  '3,7': 'minor',
+  '3,6': 'diminished',
+  '4,8': 'augmented',
+};
+
+/** Seventh-chord type keyed by triad type plus the seventh's semitone distance. */
+const SEVENTH_BY_TRIAD: Record<string, string> = {
+  'major,11': 'major7',
+  'major,10': 'dominant7',
+  'minor,10': 'minor7',
+  'minor,11': 'minor_major7',
+  'diminished,10': 'half_diminished',
+  'diminished,9': 'diminished7',
+};
+
+const ROMAN_NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+
+/**
+ * Builds the Roman-numeral label for a scale degree: uppercase for major and
+ * augmented triads, lowercase for minor and diminished, with ° / + suffixes.
+ *
+ * @param index - Zero-based scale degree.
+ * @param type  - Triad type key (major, minor, diminished, augmented).
+ * @returns The degree label, e.g. "ii", "vii°" or "III+".
+ */
+function romanNumeralFor(index: number, type: string): string {
+  const numeral = ROMAN_NUMERALS[index];
+  if (type === 'minor') return numeral.toLowerCase();
+  if (type === 'diminished') return `${numeral.toLowerCase()}°`;
+  if (type === 'augmented') return `${numeral}+`;
+  return numeral;
+}
+
+/**
+ * Get the diatonic triads (and their seventh chords) of a scale.
+ *
+ * Chord qualities are derived by stacking thirds within the scale itself,
+ * so every mode and seven-note scale gets its correct harmony (D Dorian:
+ * i ii III IV v vi° VII; A harmonic minor: i ii° III+ iv V VI vii°).
+ * Pentatonic, blues and bebop scales are harmonised with their parent
+ * seven-note scale (see HARMONY_PARENT_SCALE). Degrees whose stacked thirds
+ * do not form a standard triad (possible in some exotic scales) are omitted.
+ *
+ * @param rootNote - Root of the scale, in sharp spelling.
+ * @param scaleKey - Key into SCALES.
+ * @returns One entry per playable degree; empty for unknown scales or scales
+ *          with no seven-note harmony.
  */
 export function getDiatonicChords(rootNote: string, scaleKey: string): Array<{
   root: string;
@@ -845,17 +1014,67 @@ export function getDiatonicChords(rootNote: string, scaleKey: string): Array<{
   type: string;
   seventh: string;
 }> {
-  const scale = SCALES[scaleKey];
-  if (!scale) return [];
+  const harmonyKey = HARMONY_PARENT_SCALE[scaleKey] ?? scaleKey;
+  const scale = SCALES[harmonyKey];
+  if (!scale || scale.intervals.length !== 7) return [];
 
   const scaleNotes = getScaleNotes(rootNote, scale.intervals);
-  const isMinor = scale.category === 'minor' || scaleKey.includes('minor') || scaleKey === 'aeolian';
-  const chordQualities = isMinor ? DIATONIC_CHORDS_MINOR : DIATONIC_CHORDS_MAJOR;
+  const intervals = scale.intervals;
+  /** Semitones from degree `from` up to degree `from + steps` (wrapping). */
+  const distance = (from: number, steps: number): number =>
+    (intervals[(from + steps) % 7] - intervals[from] + 12) % 12;
 
-  return scaleNotes.map((note, index) => ({
-    root: note,
-    ...chordQualities[index % chordQualities.length],
-  }));
+  return scaleNotes.flatMap((note, index) => {
+    const type = TRIAD_BY_INTERVALS[`${distance(index, 2)},${distance(index, 4)}`];
+    if (!type) return [];
+    const seventh = SEVENTH_BY_TRIAD[`${type},${distance(index, 6)}`] ?? type;
+    return [{ root: note, degree: romanNumeralFor(index, type), type, seventh }];
+  });
+}
+
+/**
+ * Relationships in SCALES[...].relatedScales that mean "the same notes from a
+ * different root" (relative keys, modes, parent scales) - as opposed to
+ * parallel relationships, which keep the root.
+ */
+const SHARED_NOTES_RELATIONSHIP = /relative|parent|mode of this scale/i;
+
+/**
+ * Chooses the root to use when the player follows a related-scale link.
+ *
+ * Parallel relationships ("Parallel mode (b7)", "Minor variant") keep the
+ * current root. Shared-note relationships move to the root whose scale
+ * contains the same notes: C major -> "Relative minor" gives A, A harmonic
+ * minor -> "5th mode of this scale" gives E. When the current root already
+ * works (A minor pentatonic -> parent A natural minor), it is kept.
+ *
+ * @param currentRoot - The active root note.
+ * @param currentKey  - The active SCALES key.
+ * @param related     - The related-scale entry being followed.
+ * @returns The root note for the related scale.
+ */
+export function resolveRelatedScaleRoot(
+  currentRoot: string,
+  currentKey: string,
+  related: RelatedScaleRef
+): string {
+  const current = SCALES[currentKey];
+  const target = SCALES[related.key];
+  if (!current || !target || !SHARED_NOTES_RELATIONSHIP.test(related.relationship)) {
+    return currentRoot;
+  }
+
+  const currentNotes = new Set(getScaleNotes(currentRoot, current.intervals));
+  /** True when one note set contains the other (subset, superset or equal). */
+  const nested = (root: string): boolean => {
+    const targetNotes = new Set(getScaleNotes(root, target.intervals));
+    const [small, large] =
+      targetNotes.size <= currentNotes.size ? [targetNotes, currentNotes] : [currentNotes, targetNotes];
+    return [...small].every((note) => large.has(note));
+  };
+
+  if (nested(currentRoot)) return currentRoot;
+  return ALL_NOTES.find((root) => nested(root)) ?? currentRoot;
 }
 
 /**
@@ -956,7 +1175,7 @@ export function searchScales(query: string): Array<{ key: string; scale: Scale }
  */
 export function getScalesByCategory(category: ScaleCategory): Array<{ key: string; scale: Scale }> {
   return Object.entries(SCALES)
-    .filter(([_, scale]) => scale.category === category)
+    .filter(([, scale]) => scale.category === category)
     .map(([key, scale]) => ({ key, scale }));
 }
 

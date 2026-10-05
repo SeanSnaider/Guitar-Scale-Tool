@@ -35,7 +35,7 @@ import React, {
 } from 'react';
 import { useGuitarStore } from '../../store/useGuitarStore';
 import { audioEngine } from '../../audio/AudioEngine';
-import { ALL_NOTES, SCALES, getScaleNotes } from '../../data/musicTheory';
+import { ALL_NOTES, SCALES, getAscendingOctaves, getScaleNotes } from '../../data/musicTheory';
 import {
   startSession,
   endSession,
@@ -43,6 +43,7 @@ import {
   type PracticeSession,
 } from '../../services/api';
 import SegmentedToggle from '../ui/SegmentedToggle';
+import Fretboard from '../Fretboard';
 import ProgressBar, { type AnswerStatus } from './ProgressBar';
 import QuestionPrompt from './QuestionPrompt';
 import AnswerGrid, { type AnswerOption } from './AnswerGrid';
@@ -111,7 +112,25 @@ interface Question {
   options: AnswerOption[];
   /** The `value` field of the correct AnswerOption. */
   correctAnswer: string;
+  /** How long the question audio lasts, in ms (drives the playing animation). */
+  audioDurationMs?: number;
+  /**
+   * For Scales-mode questions: the scale actually played, so the attempt is
+   * credited to it rather than to whatever scale the fretboard has selected.
+   */
+  scaleTarget?: ScaleTarget;
 }
+
+/** Identifies the scale an attempt is recorded against. */
+interface ScaleTarget {
+  /** Learned-scale store/backend key, `${root}-${scaleKey}`. */
+  key: string;
+  /** Human-readable name for the "now LEARNED" message. */
+  label: string;
+}
+
+/** Default duration of the "playing" animation when a question does not set one. */
+const DEFAULT_AUDIO_DURATION_MS = 1200;
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -225,9 +244,11 @@ function generateNoteQuestion(): Question {
 /**
  * Generates a random Scales-mode question.
  *
- * Picks a random root and scale type from the curated list, plays the first
- * five scale notes ascending (250 ms apart), and offers four scale names as
- * answers.
+ * Picks a random root and scale type from the curated list, plays the whole
+ * scale ascending to the octave (250 ms apart), and offers four scale names
+ * as answers. The full scale is needed: the first five notes of Natural
+ * Minor and Dorian are identical, so a five-note preview made some
+ * questions unanswerable.
  *
  * @returns A complete Question object.
  */
@@ -239,8 +260,8 @@ function generateScaleQuestion(): Question {
   const scale = SCALES[scaleKey];
   const scaleNotes = getScaleNotes(rootNote, scale.intervals);
 
-  // Play the first 5 notes ascending at octave 4 (250 ms apart)
-  const notesToPlay = scaleNotes.slice(0, 5);
+  // Play the full scale plus the octave, ascending from octave 4.
+  const notesToPlay = getAscendingOctaves([...scaleNotes, rootNote], 4);
 
   const correctAnswer = scaleKey;
   const correctLabel = scale.name;
@@ -255,12 +276,14 @@ function generateScaleQuestion(): Question {
     id: ++questionCounter,
     questionText: 'What scale is this?',
     audioToPlay: () => {
-      notesToPlay.forEach((note, i) => {
-        setTimeout(() => audioEngine.playNote(note, 4), i * 250);
+      notesToPlay.forEach(({ note, octave }, i) => {
+        setTimeout(() => audioEngine.playNote(note, octave), i * 250);
       });
     },
+    audioDurationMs: notesToPlay.length * 250 + 300,
     correctAnswer,
     options,
+    scaleTarget: { key: `${rootNote}-${scaleKey}`, label: `${rootNote} ${scale.name}` },
   };
 }
 
@@ -310,9 +333,8 @@ export default function EarTrainingView(): React.ReactElement {
     metronome,
     addXP,
     addPracticeMinutes,
-    lastClickedNote,
     setLastClickedNote,
-    toggleLearnedScale,
+    markScaleLearned,
   } = useGuitarStore();
 
   // Map store's 3-mode type to our 4-mode type (sequence is local only)
@@ -333,6 +355,47 @@ export default function EarTrainingView(): React.ReactElement {
 
   // Backend session
   const backendSessionRef = useRef<PracticeSession | null>(null);
+
+  // Pending UI timers (auto-play, feedback delay, messages). Tracked so they
+  // can be cancelled on mode change / restart / unmount; otherwise a timer
+  // from the previous session could finish or advance the new one.
+  const timersRef = useRef(new Set<ReturnType<typeof setTimeout>>());
+
+  /**
+   * setTimeout that is automatically cancelled by clearTimers().
+   *
+   * @param callback - Work to run.
+   * @param delayMs  - Delay in milliseconds.
+   */
+  const schedule = useCallback((callback: () => void, delayMs: number) => {
+    const handle = setTimeout(() => {
+      timersRef.current.delete(handle);
+      callback();
+    }, delayMs);
+    timersRef.current.add(handle);
+  }, []);
+
+  /** Cancels every pending timer created with schedule(). */
+  const clearTimers = useCallback(() => {
+    timersRef.current.forEach((handle) => clearTimeout(handle));
+    timersRef.current.clear();
+  }, []);
+
+  /**
+   * Ends the in-flight backend session without accuracy (used when a session
+   * is abandoned), so it is not left open forever.
+   */
+  const abandonBackendSession = useCallback(() => {
+    const session = backendSessionRef.current;
+    backendSessionRef.current = null;
+    if (session) endSession(session.id).catch(() => {});
+  }, []);
+
+  // Cancel timers and close any open backend session on unmount.
+  useEffect(() => () => {
+    clearTimers();
+    abandonBackendSession();
+  }, [clearTimers, abandonBackendSession]);
   const sessionStartTimeRef = useRef<number | null>(null);
 
   // ── Sequence mode state (preserved from PracticeMode) ─────────────────────
@@ -393,56 +456,67 @@ export default function EarTrainingView(): React.ReactElement {
    *
    * @param correct - Whether the user answered correctly.
    * @param bpm     - Current metronome BPM (used for mastery threshold).
+   * @param target  - Scale to credit; defaults to the fretboard's selected
+   *                  scale (Sequence mode). Scales mode passes the scale that
+   *                  was actually played in the question.
    */
   const reportScaleAttempt = useCallback(
-    async (correct: boolean, bpm: number) => {
+    async (correct: boolean, bpm: number, target?: ScaleTarget) => {
+      const { key, label } = target ?? { key: scaleKey, label: `${selectedRoot} ${selectedScale}` };
       try {
         const res = await recordScaleAttempt(
-          scaleKey,
+          key,
           bpm,
           correct,
           backendSessionRef.current?.id,
         );
         setConsecutiveCorrect(res.mastery.consecutive_correct);
         if (res.just_learned) {
-          toggleLearnedScale(scaleKey);
-          setJustLearnedMessage(`${selectedRoot} ${selectedScale} is now LEARNED!`);
+          // markScaleLearned is idempotent; toggling would un-learn a scale
+          // that was already in the local set.
+          markScaleLearned(key);
+          setJustLearnedMessage(`${label} is now LEARNED!`);
           addXP(50);
-          setTimeout(() => setJustLearnedMessage(null), 4000);
+          schedule(() => setJustLearnedMessage(null), 4000);
         }
       } catch {
         // Backend unreachable — silently continue
       }
     },
-    [scaleKey, selectedRoot, selectedScale, toggleLearnedScale, addXP],
+    [scaleKey, selectedRoot, selectedScale, markScaleLearned, addXP, schedule],
   );
 
   // ── Sequence mode: wire fretboard note clicks ──────────────────────────────
 
+  // Subscribes to fretboard clicks rather than reacting to lastClickedNote
+  // in render: only clicks made *during* the session count (a note clicked
+  // earlier no longer gets scored the moment Start is pressed), and state is
+  // updated from the subscription callback instead of the effect body.
   useEffect(() => {
-    if (phase !== 'active' || activeMode !== 'sequence' || !lastClickedNote) return;
+    if (phase !== 'active' || activeMode !== 'sequence' || scaleNotes.length === 0) return;
 
-    const posInScale = sequenceIndex % scaleNotes.length;
-    const targetNote = scaleNotes[posInScale];
+    return useGuitarStore.subscribe((state, prevState) => {
+      const clicked = state.lastClickedNote;
+      if (!clicked || clicked === prevState.lastClickedNote) return;
 
-    if (lastClickedNote === targetNote) {
-      const nextIndex = sequenceIndex + 1;
-      setSequenceIndex(nextIndex);
-      setSeqScore((s) => s + 1);
-      setSeqTotal((t) => t + 1);
+      const posInScale = sequenceIndex % scaleNotes.length;
+      if (clicked === scaleNotes[posInScale]) {
+        setSequenceIndex(sequenceIndex + 1);
+        setSeqScore((s) => s + 1);
+        setSeqTotal((t) => t + 1);
 
-      if (posInScale === scaleNotes.length - 1) {
-        sequenceRunsRef.current += 1;
-        void reportScaleAttempt(true, metronome.bpm);
+        if (posInScale === scaleNotes.length - 1) {
+          sequenceRunsRef.current += 1;
+          void reportScaleAttempt(true, metronome.bpm);
+        }
+      } else {
+        setSeqTotal((t) => t + 1);
+        void reportScaleAttempt(false, metronome.bpm);
       }
-    } else {
-      setSeqTotal((t) => t + 1);
-      void reportScaleAttempt(false, metronome.bpm);
-    }
 
-    setLastClickedNote(null);
+      setLastClickedNote(null);
+    });
   }, [
-    lastClickedNote,
     phase,
     activeMode,
     scaleNotes,
@@ -479,14 +553,14 @@ export default function EarTrainingView(): React.ReactElement {
       setEarTrainingAnswers(updatedAnswers);
 
       // Auto-play after a short layout delay
-      setTimeout(() => {
+      schedule(() => {
         setIsPlaying(true);
         q.audioToPlay();
-        // Mark as finished playing after a generous window
-        setTimeout(() => setIsPlaying(false), 1200);
+        // Mark as finished playing once the question audio has ended
+        schedule(() => setIsPlaying(false), q.audioDurationMs ?? DEFAULT_AUDIO_DURATION_MS);
       }, 150);
     },
-    [buildAnswersArray, setEarTrainingAnswers],
+    [buildAnswersArray, setEarTrainingAnswers, schedule],
   );
 
   // ── Session start ──────────────────────────────────────────────────────────
@@ -496,7 +570,9 @@ export default function EarTrainingView(): React.ReactElement {
    * session, and loads the first question.
    */
   const startQuizSession = useCallback(async () => {
-    // Reset session state
+    // Drop anything left over from a previous run before resetting state
+    clearTimers();
+    abandonBackendSession();
     setEarTrainingScore(0);
     setEarTrainingTotal(0);
     setEarTrainingAnswers(Array(TOTAL_QUESTIONS).fill('pending'));
@@ -515,6 +591,8 @@ export default function EarTrainingView(): React.ReactElement {
   }, [
     activeMode,
     loadQuestion,
+    clearTimers,
+    abandonBackendSession,
     scaleKey,
     metronome.bpm,
     setEarTrainingScore,
@@ -605,11 +683,11 @@ export default function EarTrainingView(): React.ReactElement {
 
       // Record backend attempt for scales mode
       if (activeMode === 'scales') {
-        void reportScaleAttempt(isCorrect, metronome.bpm);
+        void reportScaleAttempt(isCorrect, metronome.bpm, currentQuestion.scaleTarget);
       }
 
       // After feedback delay, advance or end session
-      setTimeout(() => {
+      schedule(() => {
         const nextIndex = currentQuestionIndex + 1;
         if (nextIndex >= TOTAL_QUESTIONS) {
           void finishSession(newScore, newTotal);
@@ -637,6 +715,7 @@ export default function EarTrainingView(): React.ReactElement {
       reportScaleAttempt,
       finishSession,
       loadQuestion,
+      schedule,
     ],
   );
 
@@ -650,8 +729,8 @@ export default function EarTrainingView(): React.ReactElement {
     if (!currentQuestion) return;
     setIsPlaying(true);
     currentQuestion.audioToPlay();
-    setTimeout(() => setIsPlaying(false), 1200);
-  }, [currentQuestion]);
+    schedule(() => setIsPlaying(false), currentQuestion.audioDurationMs ?? DEFAULT_AUDIO_DURATION_MS);
+  }, [currentQuestion, schedule]);
 
   // ── Mode change ────────────────────────────────────────────────────────────
 
@@ -664,13 +743,18 @@ export default function EarTrainingView(): React.ReactElement {
   const handleModeChange = useCallback(
     (value: string) => {
       const newMode = value as EarMode;
+      // Abandon the running session: pending timers would otherwise advance
+      // or finish the *new* mode, and the backend session would stay open.
+      clearTimers();
+      abandonBackendSession();
+      setIsAdvancing(false);
       setActiveMode(newMode);
       if (newMode !== 'sequence') {
         setEarTrainingMode(newMode as 'intervals' | 'notes' | 'scales');
       }
       setPhase('start');
     },
-    [setEarTrainingMode],
+    [setEarTrainingMode, clearTimers, abandonBackendSession],
   );
 
   // ── Sequence mode start/stop ───────────────────────────────────────────────
@@ -765,6 +849,14 @@ export default function EarTrainingView(): React.ReactElement {
             setPhase('start');
           }}
         />
+      )}
+
+      {/* The exercise is played by clicking notes, so the fretboard has to be
+          on this tab; Fretboard writes each click to lastClickedNote. */}
+      {activeMode === 'sequence' && phase === 'active' && (
+        <div style={{ marginTop: 16 }}>
+          <Fretboard />
+        </div>
       )}
 
       {/* ── Quiz modes (intervals / notes / scales) ───────────────────────── */}
@@ -1100,7 +1192,8 @@ interface SequenceSectionProps {
  * SequenceSection
  *
  * Renders the Sequence exercise lifted directly from PracticeMode.tsx.
- * The user plays scale notes in order by clicking the fretboard above.
+ * The user plays scale notes in order by clicking the fretboard rendered
+ * below it (by EarTrainingView) while the exercise is active.
  * Mastery is tracked at 3 consecutive correct runs at ≥ 120 BPM via the
  * backend.
  *
@@ -1156,7 +1249,7 @@ function SequenceSection({
             maxWidth: 320,
           }}
         >
-          Play the scale notes in order by clicking them on the fretboard above.
+          Play the scale notes in order by clicking them on the fretboard.
           Achieve 3 correct runs at 120 BPM to mark the scale as learned.
         </p>
         <button
@@ -1440,7 +1533,7 @@ function SequenceSection({
           margin: 0,
         }}
       >
-        Click the notes on the fretboard above to play the sequence
+        Click the notes on the fretboard below to play the sequence
       </p>
     </div>
   );

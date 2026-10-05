@@ -168,6 +168,21 @@ export function buildChromaVector(analyser: AnalyserNode, sampleRate: number): n
 }
 
 /**
+ * Reports whether a chroma vector contains any energy at all.
+ *
+ * Every spectral bin below the -80 dB gate is ignored, so a quiet room or a
+ * muted or wrong input device yields an all-zero vector. Cosine similarity
+ * is then 0 for every template, and detectChord would return the first
+ * template (C major) as if a chord had been played.
+ *
+ * @param chromaVector - A 12-element chroma vector.
+ * @returns True if at least one pitch class has non-zero energy.
+ */
+export function hasAudibleSignal(chromaVector: readonly number[]): boolean {
+  return chromaVector.some((value) => value > 0);
+}
+
+/**
  * Detects chords from guitar audio using FFT-based chromagram analysis.
  *
  * Usage:

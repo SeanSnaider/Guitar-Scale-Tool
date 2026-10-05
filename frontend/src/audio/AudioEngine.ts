@@ -23,7 +23,7 @@ import {
   getNoteFrequency,
   STANDARD_TUNING,
 } from '../data/musicTheory';
-import { GuitarSynth } from './GuitarSynth';
+import { GuitarSynth, type ScheduledNote } from './GuitarSynth';
 import { Metronome } from './Metronome';
 
 /** Public audio settings exposed to the UI. */
@@ -67,6 +67,8 @@ class AudioEngine {
 
   // Scale playback state
   private scheduledBeats: ScheduledBeat[] = [];
+  /** Synth handles for every note of the current scale run, so Stop can silence them. */
+  private scheduledNotes: ScheduledNote[] = [];
   private beatDuration: number = 0.5;   // seconds, stored for end-detection
   private rafHandle: number | null = null;
   private scaleIsPlaying = false;
@@ -110,7 +112,11 @@ class AudioEngine {
 
     this._initializingPromise = (async () => {
       try {
-        this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const AudioContextCtor =
+          window.AudioContext ??
+          (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (!AudioContextCtor) throw new Error('Web Audio API is not supported in this browser');
+        this.audioContext = new AudioContextCtor();
 
         // Dynamics compressor → destination (prevents clipping when chords/multiple notes play)
         const compressor = this.audioContext.createDynamicsCompressor();
@@ -180,7 +186,7 @@ class AudioEngine {
    */
   playNote(note: string, octave: number = 4, duration?: number): void {
     if (!this.audioContext || !this.guitarSynth) {
-      this.initialize().then(() => this.playNote(note, octave, duration));
+      this.whenInitialized(() => this.playNote(note, octave, duration));
       return;
     }
     this.ensureRunning();
@@ -213,7 +219,7 @@ class AudioEngine {
     duration?: number
   ): void {
     if (!this.audioContext || !this.guitarSynth) {
-      this.initialize().then(() => this.playNoteAtPosition(stringIndex, fret, tuning, duration));
+      this.whenInitialized(() => this.playNoteAtPosition(stringIndex, fret, tuning, duration));
       return;
     }
     this.ensureRunning();
@@ -240,18 +246,24 @@ class AudioEngine {
    */
   scheduleScalePlayback(midiNotes: number[], bpm: number): void {
     if (!this.audioContext || !this.guitarSynth) {
-      this.initialize().then(() => this.scheduleScalePlayback(midiNotes, bpm));
+      this.whenInitialized(() => this.scheduleScalePlayback(midiNotes, bpm));
       return;
     }
     this.ensureRunning();
-    this.stopScalePlayback();
+    // Cancel any previous run without emitting -1: callers set their own
+    // "playing" state right after this call, and a deferred -1 (e.g. on the
+    // very first click, which waits for initialization) would undo it.
+    this.cancelScalePlayback();
 
     this.beatDuration = 60 / bpm;
     const startTime = this.audioContext.currentTime + 0.1; // 100 ms head start
 
+    this.scheduledNotes = [];
     this.scheduledBeats = midiNotes.map((midi, i) => {
       const audioTime = startTime + i * this.beatDuration;
-      this.guitarSynth!.playNote(midi, audioTime, this.beatDuration * 0.85);
+      this.scheduledNotes.push(
+        this.guitarSynth!.playNote(midi, audioTime, this.beatDuration * 0.85)
+      );
       return { index: i, audioTime };
     });
 
@@ -260,34 +272,12 @@ class AudioEngine {
   }
 
   /**
-   * Stop scale playback and cancel the rAF loop.
-   * Fires onScaleNotePlay(-1) to clear any highlighted note.
+   * Stop scale playback: silence every scheduled note, cancel the rAF loop,
+   * and fire onScaleNotePlay(-1) to clear any highlighted note.
    */
   stopScalePlayback(): void {
-    this.scaleIsPlaying = false;
-    if (this.rafHandle !== null) {
-      cancelAnimationFrame(this.rafHandle);
-      this.rafHandle = null;
-    }
-    this.scheduledBeats = [];
+    this.cancelScalePlayback();
     if (this.onScaleNotePlay) this.onScaleNotePlay(-1);
-  }
-
-  /**
-   * Legacy wrapper kept for call-sites that still use playScale().
-   * Converts note names + octaves to MIDI and delegates to scheduleScalePlayback.
-   *
-   * @deprecated Prefer scheduleScalePlayback with pre-computed MIDI arrays.
-   */
-  async playScale(
-    _rootNote: string,
-    _scaleKey: string,
-    _direction: 'ascending' | 'descending' | 'both' = 'ascending',
-    _bpm: number = 120,
-    _startOctave: number = 3
-  ): Promise<void> {
-    // No-op stub — Tablature now drives playback via scheduleScalePlayback.
-    // Kept so any remaining call-sites don't throw at runtime.
   }
 
   // ── Metronome ──────────────────────────────────────────────────────────────
@@ -305,7 +295,7 @@ class AudioEngine {
     accentFirst = true
   ): void {
     if (!this.metronome) {
-      this.initialize().then(() => this.startMetronome(bpm, timeSignature, accentFirst));
+      this.whenInitialized(() => this.startMetronome(bpm, timeSignature, accentFirst));
       return;
     }
     this.ensureRunning();
@@ -334,7 +324,7 @@ class AudioEngine {
    */
   playClick(isAccent = false): void {
     if (!this.audioContext || !this.metronomeGain) {
-      this.initialize().then(() => this.playClick(isAccent));
+      this.whenInitialized(() => this.playClick(isAccent));
       return;
     }
     this.ensureRunning();
@@ -389,6 +379,36 @@ class AudioEngine {
   // ── Private helpers ────────────────────────────────────────────────────────
 
   /**
+   * Run `action` once the engine is initialized. If initialization fails
+   * the action is dropped; retrying here would recurse forever, because
+   * every retry fails the same way.
+   *
+   * @param action - Work to perform once audio is available.
+   */
+  private whenInitialized(action: () => void): void {
+    this.initialize().then((ok) => {
+      if (ok) action();
+    });
+  }
+
+  /**
+   * Silence and forget the current scale run without notifying listeners.
+   * Already-scheduled notes are faded out immediately; notes that have not
+   * started yet never sound.
+   */
+  private cancelScalePlayback(): void {
+    this.scaleIsPlaying = false;
+    if (this.rafHandle !== null) {
+      cancelAnimationFrame(this.rafHandle);
+      this.rafHandle = null;
+    }
+    const now = this.audioContext?.currentTime ?? 0;
+    for (const note of this.scheduledNotes) note.cancel(now);
+    this.scheduledNotes = [];
+    this.scheduledBeats = [];
+  }
+
+  /**
    * Resume the AudioContext if the browser suspended it (common after page load
    * or tab switch). Called before any audio output.
    */
@@ -417,11 +437,15 @@ class AudioEngine {
       else break;
     }
 
-    if (this.onScaleNotePlay) this.onScaleNotePlay(currentBeat);
+    // Before the first note (the 100 ms lead-in) nothing is under the
+    // playhead yet; reporting -1 here would read as "stopped" to listeners.
+    if (currentBeat >= 0 && this.onScaleNotePlay) this.onScaleNotePlay(currentBeat);
 
-    // Stop when the last note's sustain has ended
+    // Stop when the last note's sustain has ended. The notes finished on
+    // their own, so drop the handles rather than cancelling them.
     const last = this.scheduledBeats[this.scheduledBeats.length - 1];
     if (last && now > last.audioTime + this.beatDuration) {
+      this.scheduledNotes = [];
       this.stopScalePlayback();
       return;
     }

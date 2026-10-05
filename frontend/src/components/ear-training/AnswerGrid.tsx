@@ -93,7 +93,7 @@ export default function AnswerGrid({
         let background: string;
         let borderColor: string;
         let opacity = 1;
-        let cursor: React.CSSProperties['cursor'] = disabled ? 'default' : 'pointer';
+        const cursor: React.CSSProperties['cursor'] = disabled ? 'default' : 'pointer';
 
         if (answered) {
           if (isCorrect) {

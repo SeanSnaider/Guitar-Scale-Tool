@@ -43,6 +43,7 @@ beforeEach(() => {
       achievements: [],
     },
     learnedScales: new Set<string>(),
+    rewardedScales: [] as string[],
     practiceMode: 'none',
     speedTrainerBpm: 60,
     speedTrainerIncrement: 5,

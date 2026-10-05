@@ -29,6 +29,25 @@ const FILTER = {
   Q:         1.5,
 } as const;
 
+/** Time constant (s) for the fade applied when a note is cancelled early. */
+const CANCEL_FADE_SECONDS = 0.01;
+
+/** Handle to a scheduled note, allowing it to be silenced before it ends. */
+export interface ScheduledNote {
+  /**
+   * Fade the note out and stop its oscillators at `when` (AudioContext
+   * time). Notes that have not started yet never sound.
+   *
+   * @param when - AudioContext time to cancel at.
+   */
+  cancel(when: number): void;
+}
+
+/**
+ * Plucked-string synthesizer. Each playNote call builds a short-lived node
+ * graph (three oscillators, a lowpass filter and an ADSR gain) connected to
+ * the output node; the oscillators stop themselves when the note ends.
+ */
 export class GuitarSynth {
   private readonly ctx: AudioContext;
   private readonly output: AudioNode;
@@ -51,8 +70,9 @@ export class GuitarSynth {
    * @param midi      - MIDI note number (e.g., 40 = E2, 64 = E4).
    * @param startTime - AudioContext time (seconds) to begin the note.
    * @param duration  - Total note duration in seconds (sustain + release included).
+   * @returns A handle that can silence the note early (e.g. when playback stops).
    */
-  playNote(midi: number, startTime: number, duration: number): void {
+  playNote(midi: number, startTime: number, duration: number): ScheduledNote {
     const frequency = midiToFrequency(midi);
 
     // ── Oscillators ──────────────────────────────────────────────────────────
@@ -111,5 +131,14 @@ export class GuitarSynth {
     osc1.start(startTime); osc1.stop(stopTime);
     osc2.start(startTime); osc2.stop(stopTime);
     osc3.start(startTime); osc3.stop(stopTime);
+
+    return {
+      cancel: (when: number) => {
+        env.gain.cancelScheduledValues(when);
+        env.gain.setTargetAtTime(0, when, CANCEL_FADE_SECONDS);
+        const cancelStop = Math.min(stopTime, when + CANCEL_FADE_SECONDS * 5);
+        for (const osc of [osc1, osc2, osc3]) osc.stop(cancelStop);
+      },
+    };
   }
 }

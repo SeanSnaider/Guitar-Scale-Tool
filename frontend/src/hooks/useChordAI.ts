@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { ChordDetector } from '../audio/ChordDetector';
+import { ChordDetector, hasAudibleSignal } from '../audio/ChordDetector';
 import type { ChordDetectionResult } from '../audio/ChordDetector';
 import { recordChord } from '../services/api';
 
@@ -176,7 +176,11 @@ export function useChordAI(): ChordAIState {
 
     const getDevices = async () => {
       try {
-        await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Request permission only so device labels are populated, then release
+        // the microphone straight away (otherwise it stays open, recording
+        // indicator lit, until the page is closed).
+        const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
+        probe.getTracks().forEach((track) => track.stop());
         const devices = await navigator.mediaDevices.enumerateDevices();
         const inputs = devices.filter(d => d.kind === 'audioinput');
         setAudioDevices(inputs);
@@ -263,6 +267,12 @@ export function useChordAI(): ChordAIState {
 
       const detector = new ChordDetector(analyser, audioCtx.sampleRate);
       const chroma = await detector.collectFrames(LISTEN_DURATION_MS, FRAME_INTERVAL_MS);
+      if (!hasAudibleSignal(chroma)) {
+        // Nothing above the noise gate: don't report (or save) a fake "C".
+        setDetectedChord(null);
+        setError('No sound detected. Check your input device and play a little louder.');
+        return;
+      }
       const detected = detector.detectChord(chroma);
       setDetectedChord(detected);
 
@@ -322,8 +332,21 @@ export function useChordAI(): ChordAIState {
       const errData = data as { error?: { message?: string } };
       throw new Error(errData.error?.message ?? `API error: ${response.status}`);
     }
-    const ok = data as { content: Array<{ text: string }> };
-    return ok.content[0].text;
+    // content is a list of typed blocks; it can be empty (e.g. a refusal) or
+    // start with a non-text block, so never index [0].text blindly.
+    const ok = data as { content?: Array<{ type: string; text?: string }>; stop_reason?: string };
+    const text = (ok.content ?? [])
+      .filter((block) => block.type === 'text' && typeof block.text === 'string')
+      .map((block) => block.text)
+      .join('');
+    if (!text) {
+      throw new Error(
+        ok.stop_reason === 'refusal'
+          ? 'Claude declined to answer this request.'
+          : 'Claude returned an empty response.',
+      );
+    }
+    return text;
   };
 
   /**

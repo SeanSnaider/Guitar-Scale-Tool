@@ -13,7 +13,7 @@
  */
 
 import React, { useCallback } from 'react';
-import { SCALES } from '../../data/musicTheory';
+import { SCALES, resolveRelatedScaleRoot, type RelatedScaleRef } from '../../data/musicTheory';
 import { useGuitarStore } from '../../store/useGuitarStore';
 
 // ---- Types ----------------------------------------------------------------
@@ -34,14 +34,17 @@ interface RelatedScalesProps {
  * RelatedScales
  *
  * Displays a clickable list of related scales. Clicking an item immediately
- * applies the new scale (same root) and navigates to the fretboard on desktop.
+ * applies the new scale and navigates to the fretboard on desktop. Parallel
+ * relationships keep the root; relative ones move to the root that shares
+ * the same notes (C major -> "Relative minor" -> A minor).
  *
  * @param props.scaleKey - The SCALES key for the active scale.
  * @param props.root     - The current root note.
  * @returns The rendered related scales card element.
  */
-function RelatedScales({ scaleKey, root: _root }: RelatedScalesProps): React.ReactElement {
+function RelatedScales({ scaleKey, root }: RelatedScalesProps): React.ReactElement {
   const setSelectedScale = useGuitarStore((state) => state.setSelectedScale);
+  const setSelectedRoot = useGuitarStore((state) => state.setSelectedRoot);
   const setActiveTab = useGuitarStore((state) => state.setActiveTab);
 
   const scale = SCALES[scaleKey];
@@ -52,14 +55,15 @@ function RelatedScales({ scaleKey, root: _root }: RelatedScalesProps): React.Rea
    * Switches the scale, and on desktop also navigates to the fretboard tab.
    */
   const handleRelatedClick = useCallback(
-    (key: string) => {
-      setSelectedScale(key);
+    (related: RelatedScaleRef) => {
+      setSelectedRoot(resolveRelatedScaleRoot(root, scaleKey, related));
+      setSelectedScale(related.key);
       // On desktop (≥ 1024 px) navigate to the fretboard for immediate feedback
       if (window.innerWidth >= 1024) {
         setActiveTab('fretboard');
       }
     },
-    [setSelectedScale, setActiveTab]
+    [root, scaleKey, setSelectedRoot, setSelectedScale, setActiveTab]
   );
 
   return (
@@ -76,7 +80,7 @@ function RelatedScales({ scaleKey, root: _root }: RelatedScalesProps): React.Rea
               key={rel.key}
               label={rel.label}
               relationship={rel.relationship}
-              onClick={() => handleRelatedClick(rel.key)}
+              onClick={() => handleRelatedClick(rel)}
             />
           ))}
         </div>

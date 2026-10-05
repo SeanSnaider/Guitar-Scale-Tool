@@ -103,7 +103,13 @@ export class Metronome {
   private schedulerLoop(): void {
     if (!this.running) return;
 
-    const windowEnd = this.ctx.currentTime + LOOKAHEAD_MS / 1000;
+    const now = this.ctx.currentTime;
+    const windowEnd = now + LOOKAHEAD_MS / 1000;
+
+    // If the main thread stalled (background-tab throttling, a long task)
+    // the next beat may already be in the past. Skip the missed beats rather
+    // than scheduling them all at once, which plays as a burst of clicks.
+    if (this.nextBeatTime < now) this.nextBeatTime = now;
 
     while (this.nextBeatTime < windowEnd) {
       this.scheduleClick(this.nextBeatTime, this.currentBeat);
@@ -141,7 +147,8 @@ export class Metronome {
     // Fire visual callback aligned with the audio time
     const delayMs = Math.max(0, (time - this.ctx.currentTime) * 1000);
     setTimeout(() => {
-      if (this.onBeat) this.onBeat(beat, isAccent);
+      // Guard against beats scheduled just before stop() was called.
+      if (this.running && this.onBeat) this.onBeat(beat, isAccent);
     }, delayMs);
   }
 

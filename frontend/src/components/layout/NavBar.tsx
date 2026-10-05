@@ -16,19 +16,12 @@
  */
 
 import { useState, useRef, useEffect } from 'react';
-import { useGuitarStore } from '../../store/useGuitarStore';
+import { useGuitarStore, type AppTab } from '../../store/useGuitarStore';
 
 // ---- Types ----
 
 /** Discriminated union of every navigable tab id. */
-type TabId =
-  | 'fretboard'
-  | 'scales'
-  | 'chords'
-  | 'ear-training'
-  | 'reference'
-  | 'progress'
-  | 'chordai';
+type TabId = AppTab;
 
 interface TabDefinition {
   id: TabId;
@@ -46,6 +39,7 @@ const ALL_TABS: TabDefinition[] = [
   { id: 'reference',    label: 'Reference'    },
   { id: 'progress',     label: 'Progress'     },
   { id: 'chordai',      label: 'ChordAI'      },
+  { id: 'coach',        label: 'Coach'        },
 ];
 
 /** Tabs shown directly in the nav on mobile (<768 px). */
@@ -205,18 +199,25 @@ function NavBar() {
         {/* ---- Mobile primary tabs (<768 px) ---- */}
         <div
           className="flex md:hidden"
-          style={{ flex: 1, alignItems: 'center', gap: '2px', overflowX: 'auto' }}
-          role="tablist"
-          aria-label="Navigation tabs"
+          style={{ flex: 1, alignItems: 'center', gap: '2px', minWidth: 0 }}
         >
-          {MOBILE_PRIMARY_TABS.map((tab) => (
-            <TabButton
-              key={tab.id}
-              tab={tab}
-              isActive={activeTab === tab.id}
-              onSelect={handleTabSelect}
-            />
-          ))}
+          {/* Only the primary tabs scroll. The More menu must live outside this
+              strip: overflow-x: auto also clips vertically, which would hide
+              the absolutely positioned dropdown below the 52 px bar. */}
+          <div
+            style={{ display: 'flex', flex: 1, minWidth: 0, alignItems: 'center', gap: '2px', overflowX: 'auto' }}
+            role="tablist"
+            aria-label="Navigation tabs"
+          >
+            {MOBILE_PRIMARY_TABS.map((tab) => (
+              <TabButton
+                key={tab.id}
+                tab={tab}
+                isActive={activeTab === tab.id}
+                onSelect={handleTabSelect}
+              />
+            ))}
+          </div>
 
           {/* "More ▾" overflow button */}
           <div ref={moreRef} style={{ position: 'relative', flexShrink: 0 }}>

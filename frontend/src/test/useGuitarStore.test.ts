@@ -34,6 +34,7 @@ const INITIAL_STATE_PATCH = {
     achievements: [],
   },
   learnedScales: new Set<string>(),
+  rewardedScales: [] as string[],
   practiceMode: 'none' as const,
   speedTrainerBpm: 60,
   speedTrainerIncrement: 5,

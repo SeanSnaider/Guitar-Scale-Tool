@@ -29,8 +29,8 @@ import {
   getScaleDegree,
   getInterval,
   SCALES,
-  CAGED_POSITIONS,
-  THREE_NPS_POSITIONS,
+  getScalePositions,
+  isFretInPosition,
   ALL_NOTES,
 } from '../data/musicTheory';
 import NoteCircle from './fretboard/NoteCircle';
@@ -81,7 +81,11 @@ export default function Fretboard() {
     [selectedRoot, scale]
   );
 
-  const positions = positionSystem === 'caged' ? CAGED_POSITIONS : THREE_NPS_POSITIONS;
+  /** CAGED / 3NPS windows for the current key, scale and tuning. */
+  const positions = useMemo(
+    () => getScalePositions(positionSystem, selectedRoot, selectedScale, currentTuning.notes),
+    [positionSystem, selectedRoot, selectedScale, currentTuning.notes]
+  );
 
   /** Open-string note names (low → high order for labelling). */
   const stringNames = useMemo(
@@ -118,7 +122,7 @@ export default function Fretboard() {
   const getPositionsForNote = useCallback(
     (fret: number, note: string) => {
       if (!isNoteInScale(note, scaleNotes)) return [];
-      return positions.filter((pos) => fret >= pos.startFret && fret <= pos.endFret);
+      return positions.filter((pos) => isFretInPosition(fret, pos));
     },
     [scaleNotes, positions]
   );
@@ -279,8 +283,9 @@ export default function Fretboard() {
 
         {/* ── String rows ──────────────────────────────────────────────── */}
         {strings.map((stringIndex) => {
-          // Thicker strings towards the bass side
-          const stringThickness = 1 + stringIndex * 0.3;
+          // Thicker strings towards the bass side. stringIndex is stored
+          // low -> high (0 = lowest string), so invert it for thickness.
+          const stringThickness = 1 + (currentTuning.strings - 1 - stringIndex) * 0.3;
 
           return (
             <div

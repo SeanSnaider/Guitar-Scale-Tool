@@ -48,6 +48,12 @@ const ChordAI = React.lazy(() => import('../ChordAI'));
  */
 const ProgressDashboard = React.lazy(() => import('../ProgressDashboard'));
 
+/**
+ * Lazily loaded Practice Coach tab — streams plans from the FretAgent
+ * sidecar (agent-server) and bundles react-markdown separately.
+ */
+const PracticeCoach = React.lazy(() => import('../PracticeCoach'));
+
 // ---- Sub-components ----
 
 /**
@@ -244,6 +250,23 @@ function ChordAITabContent() {
   );
 }
 
+/**
+ * CoachTabContent
+ *
+ * Renders the lazily loaded Practice Coach (FretAgent) tab.
+ *
+ * @returns The rendered coach tab content wrapped in a Suspense boundary.
+ */
+function CoachTabContent() {
+  return (
+    <main style={CONTENT_STYLE}>
+      <Suspense fallback={<TabLoadingFallback />}>
+        <PracticeCoach />
+      </Suspense>
+    </main>
+  );
+}
+
 // ---- Main component ----
 
 /**
@@ -280,6 +303,7 @@ function AppShell() {
         {activeTab === 'reference' && <ReferenceTabContent />}
         {activeTab === 'progress' && <ProgressTabContent />}
         {activeTab === 'chordai' && <ChordAITabContent />}
+        {activeTab === 'coach' && <CoachTabContent />}
       </div>
 
       {/*

@@ -141,7 +141,7 @@ export default function AudioControlsShelf(): React.ReactElement {
   }, [metronome.bpm, metronome.isPlaying]);
 
   useEffect(() => {
-    audioEngine.onMetronomeBeat = (_beat, _isAccent) => {
+    audioEngine.onMetronomeBeat = () => {
       setBeatFlash(true);
       if (flashTimerRef.current !== null) clearTimeout(flashTimerRef.current);
       flashTimerRef.current = window.setTimeout(() => setBeatFlash(false), 80);

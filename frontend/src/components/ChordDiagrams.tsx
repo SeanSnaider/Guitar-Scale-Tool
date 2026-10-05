@@ -10,7 +10,7 @@
  * Dependencies:
  * - useGuitarStore: selectedRoot, selectedScale
  * - audioEngine: playNote
- * - musicTheory: SCALES, getScaleNotes, getDiatonicChords, CHORD_TYPES, ALL_NOTES
+ * - musicTheory: SCALES, getScaleNotes, getDiatonicChords, getAscendingOctaves, CHORD_TYPES, ALL_NOTES
  */
 
 import { useState, useMemo } from 'react';
@@ -20,6 +20,7 @@ import {
   SCALES,
   getScaleNotes,
   getDiatonicChords,
+  getAscendingOctaves,
   CHORD_TYPES,
   ALL_NOTES,
 } from '../data/musicTheory';
@@ -131,14 +132,10 @@ export default function ChordDiagrams() {
     const chord = CHORD_TYPES[chordType];
     if (!chord) return;
 
+    // Root position: each chord tone sits above the previous one.
     const chordNotes = getScaleNotes(chordRoot, chord.intervals);
-    chordNotes.forEach((note, i) => {
-      setTimeout(() => {
-        const noteIndex = ALL_NOTES.indexOf(note as typeof ALL_NOTES[number]);
-        if (noteIndex !== -1) {
-          audioEngine.playNote(note, 3 + Math.floor(i / 3));
-        }
-      }, i * 80);
+    getAscendingOctaves(chordNotes, 3).forEach(({ note, octave }, i) => {
+      setTimeout(() => audioEngine.playNote(note, octave), i * 80);
     });
   };
 
@@ -155,7 +152,9 @@ export default function ChordDiagrams() {
           fontSize: '13px',
         }}
       >
-        Select a scale to view chord diagrams
+        {scale
+          ? `${scale.name} has no seven-note diatonic harmony to show`
+          : 'Select a scale to view chord diagrams'}
       </div>
     );
   }

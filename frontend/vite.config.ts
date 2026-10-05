@@ -13,6 +13,12 @@ export default defineConfig({
     watch: {
       usePolling: true,
     },
+    // FretAgent sidecar (agent-server). Must not set `xfwd`: the agent route
+    // only accepts local requests without X-Forwarded-For headers.
+    proxy: {
+      '/api/agent': 'http://localhost:3001',
+      '/api/tools': 'http://localhost:3001',
+    },
   },
   test: {
     globals: true,

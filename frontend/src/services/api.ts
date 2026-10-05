@@ -13,6 +13,24 @@
 
 // ─── Session Identity ─────────────────────────────────────────────────────────
 
+/**
+ * Generates a random v4 UUID.
+ *
+ * `crypto.randomUUID` only exists in secure contexts (HTTPS or localhost);
+ * opening the dev server by LAN IP (e.g. from a phone) would otherwise crash
+ * the whole app at import time. `crypto.getRandomValues` works everywhere.
+ *
+ * @returns A UUID string such as "3b241101-e2bb-4255-8caf-4136c566a962".
+ */
+function generateUuid(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // RFC 4122 variant
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 const SESSION_KEY = 'guitar-tool-session-id';
 
 /**
@@ -21,7 +39,7 @@ const SESSION_KEY = 'guitar-tool-session-id';
 function getOrCreateSessionId(): string {
   let id = localStorage.getItem(SESSION_KEY);
   if (!id) {
-    id = crypto.randomUUID();
+    id = generateUuid();
     localStorage.setItem(SESSION_KEY, id);
   }
   return id;
@@ -112,6 +130,29 @@ export interface BackendUserStats {
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
+/**
+ * Pulls a human-readable message out of an error response body.
+ *
+ * Handles this API's `{ error }` envelope, FastAPI's `{ detail: string }`
+ * (HTTPException) and `{ detail: [{ msg }] }` (422 validation errors).
+ *
+ * @param body - Parsed JSON body, or null if it was not JSON.
+ * @returns The message, or undefined if none could be found.
+ */
+function extractErrorMessage(body: unknown): string | undefined {
+  if (!body || typeof body !== 'object') return undefined;
+  const { error, detail } = body as { error?: unknown; detail?: unknown };
+  if (typeof error === 'string') return error;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => (item && typeof item === 'object' ? (item as { msg?: unknown }).msg : undefined))
+      .filter((msg): msg is string => typeof msg === 'string');
+    if (messages.length > 0) return messages.join('; ');
+  }
+  return undefined;
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -126,14 +167,21 @@ async function request<T>(
     },
   });
 
-  const data = await response.json() as T;
-
-  if (!response.ok) {
-    const errData = data as { error?: string };
-    throw new Error(errData.error ?? `API error: ${response.status}`);
+  // Error bodies are not always JSON (e.g. a plain-text 500 from a proxy),
+  // so parse defensively and fall back to the status code.
+  const text = await response.text();
+  let data: unknown = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    if (response.ok) throw new Error(`API error: invalid JSON from ${path}`);
   }
 
-  return data;
+  if (!response.ok) {
+    throw new Error(extractErrorMessage(data) ?? `API error: ${response.status}`);
+  }
+
+  return data as T;
 }
 
 // ─── Practice Sessions ────────────────────────────────────────────────────────
@@ -305,9 +353,16 @@ export async function getChordStats(): Promise<ChordStats> {
 
 /**
  * Returns aggregated user stats from the backend (learned scales, streaks, XP, etc.).
+ *
+ * Sends the browser's UTC offset so the backend buckets practice days (and
+ * therefore streaks) by the user's local midnight rather than UTC.
  */
 export async function getBackendStats(): Promise<BackendUserStats> {
-  const res = await request<ApiResponse<BackendUserStats>>('/stats');
+  // getTimezoneOffset() is UTC minus local; the API expects local minus UTC.
+  const utcOffsetMinutes = -new Date().getTimezoneOffset();
+  const res = await request<ApiResponse<BackendUserStats>>(
+    `/stats?utc_offset_minutes=${utcOffsetMinutes}`,
+  );
   if (!res.success || !res.data) throw new Error(res.error ?? 'Failed to fetch stats');
   return res.data;
 }
