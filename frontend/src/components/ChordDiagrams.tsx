@@ -1,11 +1,9 @@
 /**
  * ChordDiagrams.tsx
  *
- * Renders the Diatonic Chords panel for the currently selected scale.
- * Shows either graphical chord box diagrams (SVG-based) or a horizontal
- * ASCII-style tablature view. Clicking a chord plays it as an arpeggio.
- *
- * Styling: Studio Walnut theme — dark surfaces, amber accents.
+ * The Library's Chords section: the diatonic chords of the current scale,
+ * as chord box diagrams (SVG) or a compact tab view. Clicking a chord plays
+ * it as an arpeggio.
  *
  * Dependencies:
  * - useGuitarStore: selectedRoot, selectedScale
@@ -23,8 +21,14 @@ import {
   CHORD_TYPES,
   ALL_NOTES,
 } from '../data/musicTheory';
+import { SegmentedControl, cn, PageTitle } from '../ui';
 
 type ViewMode = 'boxes' | 'tab';
+
+const VIEW_MODES = [
+  { value: 'boxes', label: 'Boxes' },
+  { value: 'tab', label: 'Tab' },
+] as const;
 
 // ─── Chord voicing data ────────────────────────────────────────────────────────
 
@@ -98,6 +102,14 @@ function getChordVoicing(root: string, chordType: string): number[] {
   return [-1, barFret, -1, -1, -1, -1];
 }
 
+/** Open-string pitch classes of standard tuning, low E to high E (the voicings assume it). */
+const STANDARD_OPEN = [4, 9, 2, 7, 11, 4];
+
+/** Short fret list for screen readers, low E to high E: "x 3 2 0 1 0". */
+function fretList(voicing: number[]): string {
+  return voicing.map((f) => (f === -1 ? 'x' : String(f))).join(' ');
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 /**
@@ -107,10 +119,11 @@ function getChordVoicing(root: string, chordType: string): number[] {
  * a graphical box view or a compact tab view. Clicking any chord plays it as a
  * short arpeggio via the AudioEngine.
  *
- * @returns The rendered chord diagrams panel, or an empty-state message.
+ * @returns The rendered chord section, or an empty-state message.
  */
 export default function ChordDiagrams() {
-  const { selectedRoot, selectedScale } = useGuitarStore();
+  const selectedRoot = useGuitarStore((s) => s.selectedRoot);
+  const selectedScale = useGuitarStore((s) => s.selectedScale);
   const [viewMode, setViewMode] = useState<ViewMode>('boxes');
 
   const scale = SCALES[selectedScale];
@@ -144,100 +157,37 @@ export default function ChordDiagrams() {
 
   if (!scale || diatonicChords.length === 0) {
     return (
-      <div
-        style={{
-          padding: '16px',
-          background: 'var(--bg-elevated)',
-          borderRadius: '8px',
-          border: '1px solid var(--border-subtle)',
-          textAlign: 'center',
-          color: 'var(--text-muted)',
-          fontSize: '13px',
-        }}
-      >
-        Select a scale to view chord diagrams
+      <div className="flex flex-col gap-5">
+        <PageTitle>Chords</PageTitle>
+        <p className="text-sm text-muted">Select a scale to view chord diagrams</p>
       </div>
     );
   }
 
   return (
-    <div
-      style={{
-        background: 'var(--bg-surface)',
-        borderRadius: '8px',
-        padding: '16px',
-        border: '1px solid var(--border-subtle)',
-      }}
-    >
-      {/* Section heading */}
-      <h2
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: '18px',
-          fontWeight: 400,
-          color: 'var(--accent-glow)',
-          margin: '0 0 16px 0',
-        }}
-      >
-        Diatonic Chords
-      </h2>
-
-      {/* Header row: scale label + view toggle */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '16px',
-        }}
-      >
-        <span
-          style={{
-            fontSize: '13px',
-            fontWeight: 500,
-            color: 'var(--text-secondary)',
-          }}
-        >
-          {selectedRoot} {scale.name}
-        </span>
-
-        <div
-          style={{
-            display: 'flex',
-            background: 'var(--bg-primary)',
-            borderRadius: '6px',
-            padding: '2px',
-            gap: '2px',
-          }}
-        >
-          {(['boxes', 'tab'] as ViewMode[]).map((mode) => (
-            <button
-              key={mode}
-              onClick={() => setViewMode(mode)}
-              style={{
-                padding: '4px 10px',
-                fontSize: '12px',
-                borderRadius: '4px',
-                border: 'none',
-                cursor: 'pointer',
-                transition: 'background 0.15s ease, color 0.15s ease',
-                background: viewMode === mode ? 'var(--accent-primary)' : 'transparent',
-                color: viewMode === mode ? 'var(--on-accent)' : 'var(--text-muted)',
-                fontWeight: viewMode === mode ? 600 : 400,
-              }}
-            >
-              {mode === 'boxes' ? 'Boxes' : 'Tab'}
-            </button>
-          ))}
-        </div>
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <PageTitle>
+          Chords in {selectedRoot} <span className="text-muted">{scale.name}</span>
+        </PageTitle>
+        <SegmentedControl
+          ariaLabel="Chord view"
+          size="sm"
+          options={VIEW_MODES}
+          value={viewMode}
+          onChange={setViewMode}
+        />
       </div>
 
-      {/* View */}
       {viewMode === 'boxes' ? (
         <ChordBoxesView chords={diatonicChords} onPlayChord={handlePlayChord} />
       ) : (
         <ChordTabView chords={diatonicChords} onPlayChord={handlePlayChord} />
       )}
+
+      <p className="text-xs text-muted">
+        Select a chord to hear it. Root notes in <span className="font-bold text-accent-ink">orange</span>.
+      </p>
     </div>
   );
 }
@@ -250,213 +200,149 @@ interface ChordViewProps {
   onPlayChord: (root: string, type: string) => void;
 }
 
+const DIAGRAM_W = 70;
+const DIAGRAM_H = 80;
+const NUM_FRETS = 4;
+const NUM_STRINGS = 6;
+const DOT_R = 5;
+const STRING_GAP = DIAGRAM_W / (NUM_STRINGS - 1);
+const FRET_GAP = DIAGRAM_H / NUM_FRETS;
+/** Margins around the grid: left for the "5fr" label, top for the o/x markers. */
+const PAD_L = 20;
+const PAD_T = 14;
+const PAD_R = 8;
+const PAD_B = 4;
+
 /**
- * ChordBoxesView renders graphical fretboard chord diagrams.
- *
- * Each diagram is an inline SVG showing vertical strings, horizontal frets,
- * and filled dots for finger positions. Muted / open strings are shown above
- * the nut as × / ○ symbols.
+ * ChordBox draws one chord diagram: vertical strings, horizontal frets, ink
+ * finger dots (accent where the fretted note is the chord root), and open (o)
+ * and muted (x) markers above the nut. Decorative; the button carries the
+ * fret list as its accessible name.
+ */
+function ChordBox({ voicing, root }: { voicing: number[]; root: string }) {
+  const rootPc = ALL_NOTES.indexOf(root as typeof ALL_NOTES[number]);
+
+  const frettedNotes = voicing.filter((f) => f > 0);
+  const minFret = frettedNotes.length > 0 ? Math.min(...frettedNotes) : 1;
+  const maxFret = frettedNotes.length > 0 ? Math.max(...frettedNotes) : 4;
+
+  let startFret = 1;
+  if (minFret > 4) {
+    startFret = minFret;
+  } else if (maxFret > 4) {
+    startFret = Math.max(1, minFret);
+  }
+  const showNut = startFret === 1;
+
+  return (
+    <svg
+      aria-hidden="true"
+      width={DIAGRAM_W + PAD_L + PAD_R}
+      height={DIAGRAM_H + PAD_T + PAD_B}
+      viewBox={`${-PAD_L} ${-PAD_T} ${DIAGRAM_W + PAD_L + PAD_R} ${DIAGRAM_H + PAD_T + PAD_B}`}
+    >
+      {/* Frets (the top line becomes the nut at the first position) */}
+      <g className="text-line-strong" stroke="currentColor" strokeWidth={1}>
+        {Array.from({ length: NUM_FRETS + 1 }, (_, idx) =>
+          idx === 0 && showNut ? null : (
+            <line key={idx} x1={0} y1={idx * FRET_GAP} x2={DIAGRAM_W} y2={idx * FRET_GAP} />
+          ),
+        )}
+      </g>
+
+      {/* Strings */}
+      <g className="text-control" stroke="currentColor" strokeWidth={1}>
+        {Array.from({ length: NUM_STRINGS }, (_, idx) => (
+          <line key={idx} x1={idx * STRING_GAP} y1={0} x2={idx * STRING_GAP} y2={DIAGRAM_H} />
+        ))}
+      </g>
+
+      {showNut ? (
+        <rect x={-0.5} y={-1.5} width={DIAGRAM_W + 1} height={3} rx={1} className="text-ink" fill="currentColor" />
+      ) : (
+        <text
+          x={-6}
+          y={FRET_GAP / 2 + 3}
+          textAnchor="end"
+          fontSize={9}
+          className="text-muted font-mono"
+          fill="currentColor"
+        >
+          {startFret}fr
+        </text>
+      )}
+
+      {/* Open (o) and muted (x) markers above the nut */}
+      <g className="text-muted" stroke="currentColor" strokeWidth={1.25} fill="none">
+        {voicing.map((fret, idx) => {
+          const x = idx * STRING_GAP;
+          if (fret === 0) return <circle key={idx} cx={x} cy={-8} r={3} />;
+          if (fret === -1) {
+            return <path key={idx} d={`M${x - 3} -11 L${x + 3} -5 M${x + 3} -11 L${x - 3} -5`} />;
+          }
+          return null;
+        })}
+      </g>
+
+      {/* Finger dots */}
+      {voicing.map((fret, stringIdx) => {
+        if (fret <= 0) return null;
+        const cy = (fret - startFret) * FRET_GAP + FRET_GAP / 2;
+        const isRoot = rootPc !== -1 && (STANDARD_OPEN[stringIdx] + fret) % 12 === rootPc;
+        return (
+          <circle
+            key={stringIdx}
+            cx={stringIdx * STRING_GAP}
+            cy={Math.max(DOT_R, Math.min(cy, DIAGRAM_H - DOT_R))}
+            r={DOT_R}
+            className={isRoot ? 'text-accent' : 'text-ink'}
+            fill="currentColor"
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
+/**
+ * ChordBoxesView renders the chords as a wrapping grid of diagram cards.
  *
  * @param chords - Array of diatonic chord descriptors.
  * @param onPlayChord - Callback when a chord card is clicked.
  */
 function ChordBoxesView({ chords, onPlayChord }: ChordViewProps) {
-  const diagramWidth = 70;
-  const diagramHeight = 80;
-  const numFrets = 4;
-  const numStrings = 6;
-  const dotSize = 10;
-
-  const stringSpacing = diagramWidth / (numStrings - 1);
-  const fretSpacing = diagramHeight / numFrets;
-
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        justifyContent: 'center',
-        gap: '12px',
-      }}
-    >
+    <ul className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-3">
       {chords.map((chord, i) => {
         const voicing = getChordVoicing(chord.root, chord.type);
-        const chordSymbol = CHORD_TYPES[chord.type]?.symbol || '';
-
-        const frettedNotes = voicing.filter((f) => f > 0);
-        const minFret = frettedNotes.length > 0 ? Math.min(...frettedNotes) : 1;
-        const maxFret = frettedNotes.length > 0 ? Math.max(...frettedNotes) : 4;
-
-        let startFret = 1;
-        if (minFret > 4) {
-          startFret = minFret;
-        } else if (maxFret > 4) {
-          startFret = Math.max(1, minFret);
-        }
-        const showNut = startFret === 1;
-
+        const name = `${chord.root}${CHORD_TYPES[chord.type]?.symbol || ''}`;
         return (
-          <button
-            key={i}
-            onClick={() => onPlayChord(chord.root, chord.type)}
-            style={{
-              background: 'var(--bg-primary)',
-              borderRadius: '8px',
-              padding: '12px',
-              border: '1px solid var(--border-subtle)',
-              cursor: 'pointer',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              transition: 'background 0.15s ease',
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-elevated)';
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-primary)';
-            }}
-          >
-            {/* Chord name + degree */}
-            <div style={{ textAlign: 'center', marginBottom: '8px' }}>
-              <div
-                style={{
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  color: 'var(--text-body)',
-                }}
-              >
-                {chord.root}{chordSymbol}
-              </div>
-              <div
-                style={{
-                  fontSize: '10px',
-                  color: 'var(--text-muted)',
-                }}
-              >
-                {chord.degree}
-              </div>
-            </div>
-
-            {/* Open / muted string indicators */}
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                width: diagramWidth,
-                marginBottom: '4px',
-              }}
+          <li key={i}>
+            <button
+              type="button"
+              onClick={() => onPlayChord(chord.root, chord.type)}
+              aria-label={`${name} ${chord.degree}, frets ${fretList(voicing)}`}
+              title={`Play ${name}`}
+              className="flex w-full flex-col items-center gap-2 rounded-panel border border-line bg-surface px-3 pt-3 pb-2 transition-colors duration-150 hover:border-control"
             >
-              {voicing.map((fret, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    width: dotSize,
-                    textAlign: 'center',
-                    fontSize: '10px',
-                    color: 'var(--text-muted)',
-                  }}
-                >
-                  {fret === -1 ? '×' : fret === 0 ? '○' : ''}
-                </div>
-              ))}
-            </div>
-
-            {/* SVG diagram */}
-            <svg
-              width={diagramWidth + 20}
-              height={diagramHeight + 4}
-              style={{ overflow: 'visible' }}
-            >
-              {/* Nut */}
-              {showNut && (
-                <rect
-                  x={0}
-                  y={0}
-                  width={diagramWidth}
-                  height={3}
-                  fill="var(--chord-nut)"
-                  rx={1}
-                />
-              )}
-
-              {/* Fret number label (when not at nut) */}
-              {!showNut && (
-                <text
-                  x={-4}
-                  y={fretSpacing / 2 + 4}
-                  textAnchor="end"
-                  fontSize={9}
-                  fill="var(--text-muted)"
-                >
-                  {startFret}fr
-                </text>
-              )}
-
-              {/* Vertical strings */}
-              {Array.from({ length: numStrings }).map((_, idx) => (
-                <line
-                  key={idx}
-                  x1={idx * stringSpacing}
-                  y1={showNut ? 3 : 0}
-                  x2={idx * stringSpacing}
-                  y2={diagramHeight}
-                  stroke="var(--text-muted)"
-                  strokeWidth={0.8}
-                  strokeOpacity={0.5}
-                />
-              ))}
-
-              {/* Horizontal frets */}
-              {Array.from({ length: numFrets + 1 }).map((_, idx) => (
-                <line
-                  key={idx}
-                  x1={0}
-                  y1={idx * fretSpacing}
-                  x2={diagramWidth}
-                  y2={idx * fretSpacing}
-                  stroke="var(--border-subtle)"
-                  strokeWidth={idx === 0 && showNut ? 0 : 1}
-                />
-              ))}
-
-              {/* Finger dots */}
-              {voicing.map((fret, stringIdx) => {
-                if (fret <= 0) return null;
-
-                const relativeFret = fret - startFret;
-                const cy = relativeFret * fretSpacing + fretSpacing / 2;
-                const cx = stringIdx * stringSpacing;
-
-                const isRoot = stringIdx === 0 || stringIdx === 5;
-
-                return (
-                  <circle
-                    key={stringIdx}
-                    cx={Math.max(dotSize / 2, Math.min(cx, diagramWidth - dotSize / 2))}
-                    cy={Math.max(dotSize / 2, Math.min(cy, diagramHeight - dotSize / 2))}
-                    r={dotSize / 2}
-                    fill={isRoot ? 'var(--accent-primary)' : 'var(--accent-glow)'}
-                    stroke="rgba(255,255,255,0.15)"
-                    strokeWidth={1}
-                  />
-                );
-              })}
-            </svg>
-          </button>
+              <span className="flex items-baseline gap-2">
+                <span className="text-[15px] font-bold text-ink">{name}</span>
+                <span className="font-mono text-xs text-muted">{chord.degree}</span>
+              </span>
+              <ChordBox voicing={voicing} root={chord.root} />
+            </button>
+          </li>
         );
       })}
-    </div>
+    </ul>
   );
 }
 
 // ─── ChordTabView ─────────────────────────────────────────────────────────────
 
 /**
- * ChordTabView renders chords as a horizontal guitar tablature grid.
- *
- * Each column represents a diatonic chord; each row represents a string.
- * Clicking a chord column triggers the arpeggio playback callback.
+ * ChordTabView renders chords as a six-line tab, one column per chord with
+ * the chord name underneath. Each column is one button that plays the chord.
  *
  * @param chords - Array of diatonic chord descriptors.
  * @param onPlayChord - Callback when a chord column is clicked.
@@ -465,114 +351,52 @@ function ChordTabView({ chords, onPlayChord }: ChordViewProps) {
   const stringNames = ['e', 'B', 'G', 'D', 'A', 'E'];
 
   return (
-    <div
-      style={{
-        background: 'var(--bg-primary)',
-        borderRadius: '8px',
-        padding: '12px',
-        fontFamily: 'var(--font-mono)',
-        fontSize: '13px',
-        border: '1px solid var(--border-subtle)',
-      }}
-    >
-      {stringNames.map((stringName, stringIdx) => {
-        const actualIdx = 5 - stringIdx;
-        return (
-          <div
-            key={stringIdx}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              height: '20px',
-            }}
-          >
-            <span
-              style={{
-                width: '16px',
-                fontSize: '11px',
-                color: 'var(--text-muted)',
-                fontWeight: 600,
-              }}
-            >
-              {stringName}
+    <div className="overflow-x-auto overscroll-x-contain rounded-panel border border-line bg-surface p-4">
+      <div className="flex min-w-min font-mono text-[13px]">
+        {/* String names (the button labels carry the frets for screen readers) */}
+        <div aria-hidden="true" className="flex shrink-0 flex-col">
+          {stringNames.map((name) => (
+            <span key={name} className="flex h-7 w-6 items-center text-[11px] text-muted">
+              {name}
             </span>
-            <span style={{ color: 'var(--border-subtle)' }}>|</span>
-            <div style={{ display: 'flex', flex: 1 }}>
-              {chords.map((chord, chordIdx) => {
-                const voicing = getChordVoicing(chord.root, chord.type);
-                const fret = voicing[actualIdx];
+          ))}
+        </div>
+
+        {chords.map((chord, chordIdx) => {
+          const voicing = getChordVoicing(chord.root, chord.type);
+          const name = `${chord.root}${CHORD_TYPES[chord.type]?.symbol || ''}`;
+          return (
+            <button
+              key={chordIdx}
+              type="button"
+              onClick={() => onPlayChord(chord.root, chord.type)}
+              aria-label={`${name} ${chord.degree}, frets ${fretList(voicing)}`}
+              title={`Play ${name}`}
+              className="group flex w-11 shrink-0 flex-col rounded-[4px] hover:bg-sunken"
+            >
+              {stringNames.map((stringName, rowIdx) => {
+                // Rows run high e to low E; voicings run low E to high e
+                const fret = voicing[NUM_STRINGS - 1 - rowIdx];
                 return (
-                  <button
-                    key={chordIdx}
-                    onClick={() => onPlayChord(chord.root, chord.type)}
-                    style={{
-                      width: '40px',
-                      textAlign: 'center',
-                      background: 'transparent',
-                      border: 'none',
-                      cursor: 'pointer',
-                      padding: 0,
-                      color:
-                        fret === -1
-                          ? 'var(--text-muted)'
-                          : fret === 0
-                          ? 'var(--text-secondary)'
-                          : 'var(--text-body)',
-                      transition: 'color 0.1s ease',
-                    }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLButtonElement).style.color = 'var(--accent-primary)';
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLButtonElement).style.color =
-                        fret === -1
-                          ? 'var(--text-muted)'
-                          : fret === 0
-                          ? 'var(--text-secondary)'
-                          : 'var(--text-body)';
-                    }}
-                  >
-                    {fret === -1 ? 'x' : fret}
-                  </button>
+                  <span key={stringName} className="relative flex h-7 items-center justify-center">
+                    <span aria-hidden="true" className="absolute inset-x-0 top-1/2 h-px bg-line-strong" />
+                    <span
+                      className={cn(
+                        'tabular relative bg-surface px-1 group-hover:bg-sunken',
+                        fret === -1 ? 'text-muted' : 'text-ink',
+                      )}
+                    >
+                      {fret === -1 ? 'x' : fret}
+                    </span>
+                  </span>
                 );
               })}
-            </div>
-            <span style={{ color: 'var(--border-subtle)' }}>|</span>
-          </div>
-        );
-      })}
-
-      {/* Chord name row */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          height: '24px',
-          marginTop: '4px',
-          borderTop: '1px solid var(--border-subtle)',
-          paddingTop: '4px',
-        }}
-      >
-        <span style={{ width: '16px' }} />
-        <span style={{ width: '8px' }} />
-        <div style={{ display: 'flex', flex: 1 }}>
-          {chords.map((chord, i) => {
-            const chordSymbol = CHORD_TYPES[chord.type]?.symbol || '';
-            return (
-              <div
-                key={i}
-                style={{
-                  width: '40px',
-                  textAlign: 'center',
-                  fontSize: '10px',
-                  color: 'var(--text-muted)',
-                }}
-              >
-                {chord.root}{chordSymbol}
-              </div>
-            );
-          })}
-        </div>
+              <span className="mt-1 border-t border-line pt-1 text-center text-[11px] text-muted group-hover:text-ink">
+                {name}
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

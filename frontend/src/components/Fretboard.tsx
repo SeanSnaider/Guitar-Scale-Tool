@@ -1,22 +1,12 @@
 /**
  * Fretboard.tsx
  *
- * The interactive guitar fretboard visualiser.  Renders all six strings,
- * fret wires, a nut bar, fret-position dot markers (below the strings), and
- * note circles for every playable fret position.
+ * The interactive fretboard: strings, fret wires, nut, inlay dots, and a
+ * NoteCircle at every drawn position. An ARIA grid with one tab stop and
+ * arrow-key movement; clicking a note plays it.
  *
- * Visual changes from the original (Studio Walnut restyling):
- *   - Background uses `--fretboard-bg` (#3D2B1A).
- *   - Fret 0 renders as a thick nut bar in `--nut-color`.
- *   - Fret wires are 1 px lines in `--fret-wire`.
- *   - Position dots are rendered in a separate row BELOW the strings.
- *   - The Position Legend panel at the top is removed.
- *   - The Scale Info section at the bottom is removed.
- *   - Note circles are delegated to the `NoteCircle` sub-component.
- *   - The entire component is wrapped in a horizontally scrollable div.
- *
- * All note-rendering logic, position detection, and click handling remain
- * identical to the original implementation.
+ * Orange appears only on roots and on the playing ring, which follows scale
+ * playback via the store's `playingPosition`.
  */
 
 import React, { useMemo, useCallback, useState } from 'react';
@@ -74,6 +64,7 @@ export default function Fretboard() {
     currentTuning,
     highlightedIntervals,
   } = useGuitarStore();
+  const playingPosition = useGuitarStore((s) => s.playingPosition);
 
   const scale = SCALES[selectedScale];
   const scaleNotes = useMemo(
@@ -266,7 +257,10 @@ export default function Fretboard() {
         fret === 0 ? 'open' : `fret ${fret}`
       }`;
       const degree = inScale && scale ? getScaleDegree(note, selectedRoot, scale) : '';
+      const isPlaying =
+        playingPosition !== null && playingPosition.string === stringIndex && playingPosition.fret === fret;
       const a11y = {
+        isPlaying,
         stringIndex,
         fret,
         tabIndex: tabStop && tabStop.s === stringIndex && tabStop.f === fret ? 0 : -1,
@@ -341,227 +335,95 @@ export default function Fretboard() {
       handleNoteClick,
       currentTuning.strings,
       tabStop,
+      playingPosition,
     ]
   );
 
+  // Board width: every fret cell plus the 36px string-label column, so
+  // overflow:hidden (for the rounded corners) never clips the high frets.
+  const boardMinWidth = `max(560px, calc(36px + ${frets.length} * var(--fret-cell-min)))`;
+
+  /** One cell per fret column; flex ratios taper toward the body like a real neck. */
+  const cellStyle = (i: number): React.CSSProperties => ({
+    flex: fretWidthRatios[i],
+    minWidth: 'var(--fret-cell-min)',
+  });
+
   return (
-    /* Outer wrapper: horizontal scroll on narrow viewports */
-    <div style={{ overflowX: 'auto', width: '100%' }}>
+    <div className="w-full overflow-x-auto overscroll-x-contain">
       <p id="fretboard-keys-hint" className="sr-only">
         Arrow keys move between notes. Enter plays the selected note.
       </p>
-      {/* ── Fretboard container ──────────────────────────────────────────── */}
       <div
         role="grid"
         aria-label={`Fretboard, ${selectedRoot} ${scale?.name ?? ''}`.trim()}
         aria-describedby="fretboard-keys-hint"
         onKeyDown={handleGridKeyDown}
-        style={{
-          position: 'relative',
-          borderRadius: 8,
-          overflow: 'hidden',
-          backgroundColor: 'var(--fretboard-bg)',
-          boxShadow: '0 4px 24px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04)',
-          // Wide enough for every fret cell plus the 40 px string-label column,
-          // so overflow:hidden (for the rounded corners) never clips high frets.
-          minWidth: `max(600px, calc(40px + ${frets.length} * var(--fret-cell-min)))`,
-        }}
+        className="relative"
+        style={{ minWidth: boardMinWidth }}
       >
-        {/* ── Fret numbers row (visual only; each note's label names its fret) ── */}
-        <div
-          aria-hidden="true"
-          className="tabular"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            height: 24,
-            borderBottom: '1px solid rgba(138, 128, 112, 0.2)',
-          }}
-        >
-          {/* String label spacer */}
-          <div style={{ width: 40, flexShrink: 0 }} />
-
+        {/* Fret numbers (visual only; each note's label names its fret) */}
+        <div aria-hidden="true" className="tabular flex h-6 items-end pb-1 font-mono text-[11px] text-muted">
+          <div className="w-9 shrink-0" />
           {frets.map((fret, i) => (
-            <div
-              key={fret}
-              style={{
-                flex: fretWidthRatios[i],
-                minWidth: 'var(--fret-cell-min)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 11,
-                color: 'var(--text-muted)',
-                fontFamily: 'var(--font-body)',
-              }}
-            >
+            <div key={fret} className="flex justify-center" style={cellStyle(i)}>
               {LABELLED_FRETS.has(fret) ? fret : ''}
             </div>
           ))}
         </div>
 
-        {/* ── String rows ──────────────────────────────────────────────── */}
-        {strings.map((stringIndex) => {
-          // Thicker strings towards the bass side
-          const stringThickness = 1 + stringIndex * 0.3;
-
-          return (
-            <div
-              key={stringIndex}
-              role="row"
-              style={{ position: 'relative', display: 'flex', alignItems: 'center', height: 'var(--fret-row-h)' }}
-            >
-              {/* String name label */}
-              <div
-                role="rowheader"
-                aria-label={`String ${currentTuning.strings - stringIndex}, ${stringNames[stringIndex]}`}
-                style={{
-                  width: 40,
-                  flexShrink: 0,
-                  textAlign: 'center',
-                  fontSize: 12,
-                  color: 'var(--text-secondary)',
-                  fontFamily: 'var(--font-body)',
-                  userSelect: 'none',
-                }}
-              >
-                {stringNames[stringIndex]}
-              </div>
-
-              {/* The physical string line */}
-              <div
-                aria-hidden="true"
-                style={{
-                  position: 'absolute',
-                  left: 40,
-                  right: 0,
-                  height: stringThickness,
-                  backgroundColor: 'var(--string-color)',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  zIndex: 0,
-                }}
-              />
-
-              {/* Fret positions */}
-              <div role="none" style={{ display: 'flex', position: 'relative', zIndex: 1, flex: 1 }}>
-                {frets.map((fret, i) => (
-                  <div
-                    key={fret}
-                    role="gridcell"
-                    style={{
-                      flex: fretWidthRatios[i],
-                      minWidth: 'var(--fret-cell-min)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      position: 'relative',
-                    }}
-                  >
-                    {/* Nut (fret 0 left edge) or fret wire */}
-                    {fret === 0 ? (
-                      // Nut: thick bar on the left edge of fret 0
-                      <div
-                        style={{
-                          position: 'absolute',
-                          right: 0,
-                          top: 0,
-                          bottom: 0,
-                          width: 4,
-                          backgroundColor: 'var(--nut-color)',
-                          zIndex: 0,
-                        }}
-                      />
-                    ) : (
-                      // Fret wire: 1 px line on the left edge
-                      <div
-                        style={{
-                          position: 'absolute',
-                          left: 0,
-                          top: 0,
-                          bottom: 0,
-                          width: 1,
-                          backgroundColor: 'var(--fret-wire)',
-                          zIndex: 0,
-                        }}
-                      />
-                    )}
-
-                    {/* Note circle */}
-                    {renderNote(stringIndex, fret)}
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-
-        {/* ── Fret dot markers row (below strings) ─────────────────────── */}
-        <div
-          aria-hidden="true"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            height: 20,
-            borderTop: '1px solid rgba(138, 128, 112, 0.1)',
-          }}
-        >
-          {/* Spacer matching string label width */}
-          <div style={{ width: 40, flexShrink: 0 }} />
-
-          {frets.map((fret, i) => {
-            const isSingle = SINGLE_MARKERS.includes(fret);
-            const isDouble = DOUBLE_MARKERS.includes(fret);
-
+        <div className="overflow-hidden rounded-control bg-board">
+          {strings.map((stringIndex) => {
+            // Thicker strings toward the bass side
+            const stringThickness = 1 + stringIndex * 0.3;
             return (
-              <div
-                key={fret}
-                style={{
-                  flex: fretWidthRatios[i],
-                  minWidth: 'var(--fret-cell-min)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 3,
-                  position: 'relative',
-                }}
-              >
-                {isSingle && (
-                  <div
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: '50%',
-                      backgroundColor: 'var(--text-muted)',
-                      opacity: 0.35,
-                    }}
-                  />
-                )}
-                {isDouble && (
-                  <>
-                    <div
-                      style={{
-                        width: 7,
-                        height: 7,
-                        borderRadius: '50%',
-                        backgroundColor: 'var(--accent-primary)',
-                        opacity: 0.5,
-                      }}
-                    />
-                    <div
-                      style={{
-                        width: 7,
-                        height: 7,
-                        borderRadius: '50%',
-                        backgroundColor: 'var(--accent-primary)',
-                        opacity: 0.5,
-                      }}
-                    />
-                  </>
-                )}
+              <div key={stringIndex} role="row" className="relative flex items-center" style={{ height: 'var(--fret-row-h)' }}>
+                <div
+                  role="rowheader"
+                  aria-label={`String ${currentTuning.strings - stringIndex}, ${stringNames[stringIndex]}`}
+                  className="w-9 shrink-0 text-center text-xs text-muted select-none"
+                >
+                  {stringNames[stringIndex]}
+                </div>
+
+                {/* The string itself */}
+                <div
+                  aria-hidden="true"
+                  className="absolute right-0 left-9 top-1/2 -translate-y-1/2 bg-string"
+                  style={{ height: stringThickness }}
+                />
+
+                <div role="none" className="relative z-[1] flex flex-1">
+                  {frets.map((fret, i) => (
+                    <div key={fret} role="gridcell" className="relative flex items-center justify-center" style={{ ...cellStyle(i), height: 'var(--fret-row-h)' }}>
+                      {fret === 0 ? (
+                        <div aria-hidden="true" className="absolute inset-y-0 right-0 w-[3px] bg-ink" />
+                      ) : (
+                        <div aria-hidden="true" className="absolute inset-y-0 left-0 w-px bg-line-strong" />
+                      )}
+                      {renderNote(stringIndex, fret)}
+                    </div>
+                  ))}
+                </div>
               </div>
             );
           })}
+        </div>
+
+        {/* Inlay dots below the board */}
+        <div aria-hidden="true" className="flex h-5 items-center">
+          <div className="w-9 shrink-0" />
+          {frets.map((fret, i) => (
+            <div key={fret} className="flex justify-center gap-1" style={cellStyle(i)}>
+              {SINGLE_MARKERS.includes(fret) && <span className="size-1.5 rounded-full bg-control" />}
+              {DOUBLE_MARKERS.includes(fret) && (
+                <>
+                  <span className="size-1.5 rounded-full bg-control" />
+                  <span className="size-1.5 rounded-full bg-control" />
+                </>
+              )}
+            </div>
+          ))}
         </div>
       </div>
     </div>

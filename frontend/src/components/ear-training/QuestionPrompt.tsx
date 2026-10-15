@@ -1,20 +1,19 @@
 /**
  * QuestionPrompt.tsx
  *
- * The audio-first question card rendered at the centre of an ear-training
- * session. It shows the question text and a large circular play button that
- * the user taps to hear the sound they must identify.
+ * The audio-first question block at the centre of an ear-training session:
+ * the question text above a large round play button the user taps to hear
+ * the sound they must identify.
  *
  * States:
- *  - Initial (hasPlayed=false): button shows a play triangle, hint says "Tap to hear"
- *  - Playing (isPlaying=true): button shows an animated waveform with 3 bars
- *  - Idle after first play: button shows play triangle, hint says "Tap to replay"
- *  - Hover: amber border brightens + subtle box-shadow glow
- *
- * All colours use Studio Walnut CSS custom-property tokens.
+ *  - Initial (hasPlayed=false): play icon, hint "Tap to hear"
+ *  - Playing (isPlaying=true): animated three-bar waveform
+ *  - Idle after first play: play icon, hint "Tap to replay"
  */
 
 import React, { useState } from 'react';
+import { Play } from 'lucide-react';
+import { cn } from '../../ui';
 
 /** Props for the QuestionPrompt component. */
 export interface QuestionPromptProps {
@@ -34,9 +33,8 @@ export interface QuestionPromptProps {
 /**
  * QuestionPrompt
  *
- * Renders the question text above a large circular play button styled in the
- * Studio Walnut amber palette.  The button shows an animated waveform while
- * audio is playing and a triangle play icon otherwise.
+ * Renders the question text above a large ink-ringed play button. The button
+ * shows an animated waveform while audio is playing and a play icon otherwise.
  *
  * @param props - {@link QuestionPromptProps}
  * @returns The rendered question prompt element.
@@ -48,7 +46,6 @@ export default function QuestionPrompt({
   canReplay,
 }: QuestionPromptProps): React.ReactElement {
   const [hasPlayed, setHasPlayed] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
 
   /**
    * Handles a click on the play button.
@@ -65,171 +62,62 @@ export default function QuestionPrompt({
   const hintText = !hasPlayed ? 'Tap to hear' : 'Tap to replay';
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: 12,
-      }}
-    >
-      {/* Question text */}
-      <p
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: 20,
-          color: 'var(--accent-glow)',
-          textAlign: 'center',
-          margin: '0 0 12px 0',
-          lineHeight: 1.35,
-        }}
-      >
+    <div className="flex flex-col items-center gap-3">
+      <p className="mb-2 text-center text-xl leading-snug font-bold tracking-[-0.01em] text-ink">
         {questionText}
       </p>
 
-      {/* Circular play button */}
       <button
         type="button"
         onClick={handleClick}
         disabled={isDisabled}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
         aria-label={isPlaying ? 'Playing audio…' : hintText}
-        style={{
-          width: 80,
-          height: 80,
-          borderRadius: '50%',
-          border: `3px solid var(--accent-primary)`,
-          background: 'transparent',
-          cursor: isDisabled ? 'default' : 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          transition: 'border-color 150ms ease, box-shadow 150ms ease',
-          boxShadow: isHovered && !isDisabled
-            ? '0 0 12px var(--accent-line)'
-            : 'none',
-          borderColor: isHovered && !isDisabled
-            ? 'var(--accent-glow)'
-            : 'var(--accent-primary)',
-          opacity: isDisabled ? 0.45 : 1,
-        }}
+        className={cn(
+          'flex size-20 items-center justify-center rounded-full border-2 border-ink bg-surface text-ink',
+          'transition-[background-color,opacity] duration-150 hover:bg-sunken',
+          'disabled:pointer-events-none disabled:opacity-45',
+        )}
       >
         {isPlaying ? (
-          /* Animated waveform: 3 bars of different heights */
           <AudioWaveIcon />
         ) : (
-          /* Play triangle */
-          <PlayIcon />
+          // Nudged right so the triangle reads as optically centred
+          <Play size={30} strokeWidth={2} aria-hidden="true" className="translate-x-0.5 fill-current" />
         )}
       </button>
 
-      {/* Hint text */}
-      <span
-        style={{
-          fontSize: 11,
-          color: 'var(--text-muted)',
-          letterSpacing: '0.03em',
-        }}
-      >
-        {isPlaying ? 'Playing…' : hintText}
-      </span>
-
-      {/* Waveform animation keyframes */}
-      <style>{`
-        @keyframes ear-bar1 {
-          0%, 100% { height: 8px;  }
-          50%       { height: 20px; }
-        }
-        @keyframes ear-bar2 {
-          0%, 100% { height: 16px; }
-          50%       { height: 6px;  }
-        }
-        @keyframes ear-bar3 {
-          0%, 100% { height: 10px; }
-          50%       { height: 22px; }
-        }
-      `}</style>
+      <span className="text-xs text-muted">{isPlaying ? 'Playing…' : hintText}</span>
     </div>
   );
 }
 
 // ── Internal sub-components ────────────────────────────────────────────────────
 
-/**
- * PlayIcon
- *
- * A simple right-pointing triangle SVG rendered in amber accent colour.
- *
- * @returns The play triangle SVG element.
- */
-function PlayIcon(): React.ReactElement {
-  return (
-    <svg
-      width={28}
-      height={28}
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-    >
-      <polygon
-        points="6,4 20,12 6,20"
-        fill="var(--accent-primary)"
-      />
-    </svg>
-  );
-}
+/** Staggered start offsets so the three bars move as a wave, not in unison. */
+const BAR_DELAYS = ['[animation-delay:0ms]', '[animation-delay:150ms]', '[animation-delay:300ms]'];
 
 /**
  * AudioWaveIcon
  *
- * Three vertical bars that animate independently to suggest audio playback.
- * Each bar uses a separate CSS keyframe animation for a staggered wave look.
+ * Three vertical bars that pulse (the `wave-bar` keyframe in index.css) to
+ * show audio is playing. Under reduced motion `motion-loop` stops the loop
+ * and the bars rest at full height.
  *
  * @returns The animated waveform element.
  */
 function AudioWaveIcon(): React.ReactElement {
-  const barBase: React.CSSProperties = {
-    width: 5,
-    borderRadius: 3,
-    background: 'var(--accent-primary)',
-    display: 'inline-block',
-  };
-
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 4,
-        height: 28,
-      }}
-      aria-hidden="true"
-    >
-      <span
-        className="motion-loop"
-        style={{
-          ...barBase,
-          height: 8,
-          animation: 'ear-bar1 0.7s ease-in-out infinite',
-        }}
-      />
-      <span
-        className="motion-loop"
-        style={{
-          ...barBase,
-          height: 16,
-          animation: 'ear-bar2 0.7s ease-in-out infinite 0.15s',
-        }}
-      />
-      <span
-        className="motion-loop"
-        style={{
-          ...barBase,
-          height: 10,
-          animation: 'ear-bar3 0.7s ease-in-out infinite 0.3s',
-        }}
-      />
-    </div>
+    <span className="flex h-7 items-center gap-1" aria-hidden="true">
+      {BAR_DELAYS.map((delay, i) => (
+        <span
+          key={i}
+          className={cn(
+            'motion-loop inline-block w-[5px] origin-center animate-[wave-bar_0.7s_ease-in-out_infinite] rounded-full bg-ink',
+            i === 1 ? 'h-4' : 'h-6',
+            delay,
+          )}
+        />
+      ))}
+    </span>
   );
 }

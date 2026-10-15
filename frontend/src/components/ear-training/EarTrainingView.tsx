@@ -3,7 +3,7 @@
  *
  * The full ear-training session screen for the Guitar Scale Tool.
  *
- * Provides four modes selectable via a SegmentedToggle:
+ * Provides four modes selectable via a SegmentedControl:
  *
  *   1. Intervals — user hears two notes and identifies the interval name.
  *   2. Notes     — user hears a single note and identifies its name.
@@ -42,7 +42,7 @@ import {
   recordScaleAttempt,
   type PracticeSession,
 } from '../../services/api';
-import SegmentedToggle from '../ui/SegmentedToggle';
+import { Button, Notice, Panel, SegmentedControl, cn, PageTitle } from '../../ui';
 import ProgressBar, { type AnswerStatus } from './ProgressBar';
 import QuestionPrompt from './QuestionPrompt';
 import AnswerGrid, { type AnswerOption } from './AnswerGrid';
@@ -764,36 +764,20 @@ export default function EarTrainingView(): React.ReactElement {
     }
   }, [seqScore, seqTotal, addPracticeMinutes]);
 
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
-  const containerStyle: React.CSSProperties = {
-    maxWidth: 520,
-    margin: '0 auto',
-    padding: 24,
-    animation: 'ear-fadein 150ms ease',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 20,
-  };
-
   return (
-    <>
-    <div className="motion-slide" style={containerStyle}>
+    <div className="motion-slide flex animate-[rise-in_150ms_ease-out] flex-col gap-5">
       {/* Polite live region: answer feedback, question changes, session end */}
       <p className="sr-only" role="status" aria-live="polite">
         {announcement.text}
-        {announcement.n % 2 ? '\u00A0' : ''}
+        {announcement.n % 2 ? ' ' : ''}
       </p>
-      <style>{`
-        @keyframes ear-fadein {
-          from { opacity: 0; transform: translateY(6px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
 
-      {/* Mode selector — always visible */}
-      <div style={{ display: 'flex', justifyContent: 'center' }}>
-        <SegmentedToggle
+      <div className="flex flex-col items-start gap-3">
+        <PageTitle>Ear training</PageTitle>
+        <SegmentedControl
           ariaLabel="Exercise type"
           options={modeOptions}
           value={activeMode}
@@ -803,23 +787,33 @@ export default function EarTrainingView(): React.ReactElement {
 
       {/* ── Sequence mode ─────────────────────────────────────────────────── */}
       {activeMode === 'sequence' && (
-        <SequenceSection
-          phase={phase}
-          scaleNotes={scaleNotes}
-          sequenceIndex={sequenceIndex}
-          score={seqScore}
-          total={seqTotal}
-          consecutiveCorrect={consecutiveCorrect}
-          justLearnedMessage={justLearnedMessage}
-          metronomeBpm={metronome.bpm}
-          selectedRoot={selectedRoot}
-          selectedScale={selectedScale}
-          onStart={startSequenceSession}
-          onEnd={endSequenceSession}
-          onRestart={() => {
-            setPhase('start');
-          }}
-        />
+        <>
+          <SequenceSection
+            phase={phase}
+            scaleNotes={scaleNotes}
+            sequenceIndex={sequenceIndex}
+            score={seqScore}
+            total={seqTotal}
+            consecutiveCorrect={consecutiveCorrect}
+            justLearnedMessage={justLearnedMessage}
+            metronomeBpm={metronome.bpm}
+            selectedRoot={selectedRoot}
+            selectedScale={selectedScale}
+            onStart={startSequenceSession}
+            onEnd={endSequenceSession}
+            onRestart={() => {
+              setPhase('start');
+            }}
+          />
+
+          {/* Sequence answers come from fretboard taps, so the board has to
+              be on this tab while a session runs. */}
+          {phase === 'active' && (
+            <Panel title="Fretboard" headingLevel={3} subtitle="Tap the notes in order">
+              <Fretboard />
+            </Panel>
+          )}
+        </>
       )}
 
       {/* ── Quiz modes (intervals / notes / scales) ───────────────────────── */}
@@ -837,45 +831,33 @@ export default function EarTrainingView(): React.ReactElement {
                 answers={earTrainingAnswers}
               />
 
-              <div
-                style={{
-                  background: 'var(--bg-surface)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: 10,
-                  padding: '24px 20px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 24,
-                }}
-              >
-                <QuestionPrompt
-                  key={currentQuestion.id}
-                  questionText={currentQuestion.questionText}
-                  onPlay={handlePlay}
-                  isPlaying={isPlaying}
-                  canReplay={!isAdvancing}
-                />
+              <Panel>
+                <div className="flex flex-col gap-6 py-1">
+                  <QuestionPrompt
+                    key={currentQuestion.id}
+                    questionText={currentQuestion.questionText}
+                    onPlay={handlePlay}
+                    isPlaying={isPlaying}
+                    canReplay={!isAdvancing}
+                  />
 
-                <AnswerGrid
-                  options={currentQuestion.options}
-                  correctAnswer={currentQuestion.correctAnswer}
-                  onAnswer={handleAnswer}
-                  result={result}
-                  selectedAnswer={selectedAnswer}
-                  disabled={isAdvancing}
-                />
-              </div>
+                  <AnswerGrid
+                    options={currentQuestion.options}
+                    correctAnswer={currentQuestion.correctAnswer}
+                    onAnswer={handleAnswer}
+                    result={result}
+                    selectedAnswer={selectedAnswer}
+                    disabled={isAdvancing}
+                  />
+                </div>
+              </Panel>
 
-              {/* Live score */}
-              <div className="tabular"
-                style={{
-                  textAlign: 'center',
-                  fontSize: 12,
-                  color: 'var(--text-muted)',
-                }}
-              >
-                Score: {earTrainingScore} / {earTrainingTotal}
-              </div>
+              <p className="text-center text-xs text-muted">
+                Score:{' '}
+                <span className="tabular font-mono text-ink">
+                  {earTrainingScore} / {earTrainingTotal}
+                </span>
+              </p>
             </>
           )}
 
@@ -891,27 +873,17 @@ export default function EarTrainingView(): React.ReactElement {
         </>
       )}
     </div>
-
-    {/* Sequence mode answers come from fretboard taps, so the board has to be
-        on this tab. Full width, outside the 520 px quiz column. */}
-    {activeMode === 'sequence' && phase === 'active' && (
-      <div
-        style={{
-          background: 'var(--bg-surface)',
-          border: '1px solid var(--border-subtle)',
-          borderRadius: 8,
-          padding: 12,
-          marginTop: 4,
-        }}
-      >
-        <Fretboard />
-      </div>
-    )}
-    </>
   );
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
+
+/** Quiz-mode names, used as the start screen's panel title. */
+const MODE_LABELS: Record<string, string> = {
+  intervals: 'Intervals',
+  notes: 'Notes',
+  scales: 'Scales',
+};
 
 // ---- StartScreen -----
 
@@ -919,15 +891,15 @@ export default function EarTrainingView(): React.ReactElement {
 interface StartScreenProps {
   /** Current ear-training mode. */
   mode: EarMode;
-  /** Called when the user taps "Start Session". */
+  /** Called when the user taps "Start session". */
   onStart: () => void;
 }
 
 /**
  * StartScreen
  *
- * Shown before a session begins. Describes the active mode and presents a
- * "Start Session" button.
+ * Shown before a session begins. Describes the active mode and presents the
+ * "Start session" button.
  *
  * @param props - {@link StartScreenProps}
  * @returns The rendered start screen.
@@ -943,77 +915,21 @@ function StartScreen({ mode, onStart }: StartScreenProps): React.ReactElement {
   };
 
   return (
-    <div
-      style={{
-        background: 'var(--bg-surface)',
-        border: '1px solid var(--border-subtle)',
-        borderRadius: 10,
-        padding: '32px 24px',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: 20,
-        textAlign: 'center',
-      }}
-    >
-      <p
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: 22,
-          color: 'var(--accent-glow)',
-          margin: 0,
-        }}
-      >
-        Ear Training
-      </p>
-
-      <p
-        style={{
-          fontSize: 14,
-          color: 'var(--text-body)',
-          margin: 0,
-          lineHeight: 1.6,
-          maxWidth: 320,
-        }}
-      >
-        {descriptions[mode] ?? descriptions['intervals']}
-      </p>
-
-      <p
-        style={{
-          fontSize: 12,
-          color: 'var(--text-muted)',
-          margin: 0,
-        }}
-      >
-        {TOTAL_QUESTIONS} questions per session
-      </p>
-
-      <button
-        type="button"
-        onClick={onStart}
-        style={{
-          marginTop: 8,
-          padding: '12px 36px',
-          background: 'var(--accent-primary)',
-          color: 'var(--on-accent)',
-          border: 'none',
-          borderRadius: 8,
-          fontSize: 14,
-          fontWeight: 600,
-          cursor: 'pointer',
-          transition: 'opacity 150ms ease',
-        }}
-        onMouseEnter={(e) => {
-          (e.currentTarget as HTMLButtonElement).style.opacity = '0.85';
-        }}
-        onMouseLeave={(e) => {
-          (e.currentTarget as HTMLButtonElement).style.opacity = '1';
-        }}
-      >
-        Start Session
-      </button>
-    </div>
+    <Panel title={MODE_LABELS[mode] ?? MODE_LABELS.intervals} headingLevel={3}>
+      <div className="flex flex-col items-start gap-4">
+        <div className="flex flex-col gap-1">
+          <p className="max-w-[52ch] text-sm leading-relaxed text-ink">
+            {descriptions[mode] ?? descriptions['intervals']}
+          </p>
+          <p className="text-xs text-muted">
+            <span className="font-mono">{TOTAL_QUESTIONS}</span> questions per session
+          </p>
+        </div>
+        <Button variant="ink" size="lg" onClick={onStart}>
+          Start session
+        </Button>
+      </div>
+    </Panel>
   );
 }
 
@@ -1032,7 +948,7 @@ interface EndScreenProps {
 /**
  * EndScreen
  *
- * Displays the session result (score, percentage) with a "Try Again" button.
+ * Displays the session result (score, percentage) with a "Try again" button.
  *
  * @param props - {@link EndScreenProps}
  * @returns The rendered end screen.
@@ -1052,87 +968,25 @@ function EndScreen({
       : 'Keep practising!';
 
   return (
-    <div
-      style={{
-        background: 'var(--bg-surface)',
-        border: '1px solid var(--border-subtle)',
-        borderRadius: 10,
-        padding: '40px 24px',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: 16,
-        textAlign: 'center',
-      }}
-    >
-      <p
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: 22,
-          color: 'var(--accent-glow)',
-          margin: 0,
-        }}
-      >
-        Session Complete
-      </p>
-
-      <p
-        style={{
-          fontSize: 48,
-          fontWeight: 700,
-          color: pct >= 60 ? 'var(--correct)' : 'var(--incorrect)',
-          margin: '8px 0 0',
-          lineHeight: 1,
-        }}
-      >
-        {pct}%
-      </p>
-
-      <p className="tabular"
-        style={{
-          fontSize: 14,
-          color: 'var(--text-secondary)',
-          margin: 0,
-        }}
-      >
-        {score} of {total} correct
-      </p>
-
-      <p
-        style={{
-          fontSize: 13,
-          color: 'var(--text-muted)',
-          margin: 0,
-        }}
-      >
-        {message}
-      </p>
-
-      <button
-        type="button"
-        onClick={onRetry}
-        style={{
-          marginTop: 12,
-          padding: '12px 36px',
-          background: 'var(--accent-primary)',
-          color: 'var(--on-accent)',
-          border: 'none',
-          borderRadius: 8,
-          fontSize: 14,
-          fontWeight: 600,
-          cursor: 'pointer',
-          transition: 'opacity 150ms ease',
-        }}
-        onMouseEnter={(e) => {
-          (e.currentTarget as HTMLButtonElement).style.opacity = '0.85';
-        }}
-        onMouseLeave={(e) => {
-          (e.currentTarget as HTMLButtonElement).style.opacity = '1';
-        }}
-      >
-        Try Again
-      </button>
-    </div>
+    <Panel title="Session complete" headingLevel={3}>
+      <div className="flex flex-col items-start gap-4">
+        <div className="flex flex-col gap-1">
+          <p className="flex items-baseline gap-3">
+            <span aria-hidden="true" className="tabular font-mono text-5xl leading-none font-bold tracking-[-0.03em] text-ink">
+              {score} / {total}
+            </span>
+            <span className="sr-only">
+              {score} of {total} correct,
+            </span>
+            <span className="tabular font-mono text-lg text-muted">{pct}%</span>
+          </p>
+          <p className="mt-2 text-[13px] text-muted">{message}</p>
+        </div>
+        <Button variant="ink" size="lg" onClick={onRetry}>
+          Try again
+        </Button>
+      </div>
+    </Panel>
   );
 }
 
@@ -1171,10 +1025,10 @@ interface SequenceSectionProps {
 /**
  * SequenceSection
  *
- * Renders the Sequence exercise lifted directly from PracticeMode.tsx.
- * The user plays scale notes in order by selecting them on the fretboard below.
- * Mastery is tracked at 3 consecutive correct runs at ≥ 120 BPM via the
- * backend.
+ * The Sequence exercise lifted from PracticeMode.tsx. The user plays scale
+ * notes in order by selecting them on the fretboard (rendered by the parent
+ * below this card). Mastery is tracked at 3 consecutive correct runs at
+ * ≥ 120 BPM via the backend.
  *
  * @param props - {@link SequenceSectionProps}
  * @returns The rendered sequence exercise section.
@@ -1196,324 +1050,123 @@ function SequenceSection({
 }: SequenceSectionProps): React.ReactElement {
   if (phase === 'start') {
     return (
-      <div
-        style={{
-          background: 'var(--bg-surface)',
-          border: '1px solid var(--border-subtle)',
-          borderRadius: 10,
-          padding: '32px 24px',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: 20,
-          textAlign: 'center',
-        }}
-      >
-        <p
-          style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: 22,
-            color: 'var(--accent-glow)',
-            margin: 0,
-          }}
-        >
-          Sequence Practice
-        </p>
-        <p
-          style={{
-            fontSize: 14,
-            color: 'var(--text-body)',
-            margin: 0,
-            lineHeight: 1.6,
-            maxWidth: 320,
-          }}
-        >
-          Play the scale notes in order on the fretboard, which appears once you start.
-          Achieve 3 correct runs at 120 BPM to mark the scale as learned.
-        </p>
-        <button
-          type="button"
-          onClick={onStart}
-          style={{
-            marginTop: 8,
-            padding: '12px 36px',
-            background: 'var(--accent-primary)',
-            color: 'var(--on-accent)',
-            border: 'none',
-            borderRadius: 8,
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: 'pointer',
-          }}
-        >
-          Start Practice
-        </button>
-      </div>
+      <Panel title="Sequence practice" headingLevel={3}>
+        <div className="flex flex-col items-start gap-4">
+          <p className="max-w-[52ch] text-sm leading-relaxed text-ink">
+            Play the scale notes in order on the fretboard, which appears once you start.
+            Achieve 3 correct runs at 120 BPM to mark the scale as learned.
+          </p>
+          <Button variant="ink" size="lg" onClick={onStart}>
+            Start practice
+          </Button>
+        </div>
+      </Panel>
     );
   }
 
   if (phase === 'end') {
     return (
-      <div
-        style={{
-          background: 'var(--bg-surface)',
-          border: '1px solid var(--border-subtle)',
-          borderRadius: 10,
-          padding: '40px 24px',
-          textAlign: 'center',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: 16,
-        }}
-      >
-        <p
-          style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: 22,
-            color: 'var(--accent-glow)',
-            margin: 0,
-          }}
-        >
-          Session Ended
-        </p>
-        <p className="tabular"
-          style={{ fontSize: 14, color: 'var(--text-secondary)', margin: 0 }}
-        >
-          Score: {score} / {total}
-        </p>
-        <button
-          type="button"
-          onClick={onRestart}
-          style={{
-            padding: '12px 36px',
-            background: 'var(--accent-primary)',
-            color: 'var(--on-accent)',
-            border: 'none',
-            borderRadius: 8,
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: 'pointer',
-          }}
-        >
-          Try Again
-        </button>
-      </div>
+      <Panel title="Session ended" headingLevel={3}>
+        <div className="flex flex-col items-start gap-4">
+          <p className="text-sm text-muted">
+            Score:{' '}
+            <span className="tabular font-mono text-ink">
+              {score} / {total}
+            </span>
+          </p>
+          <Button variant="ink" size="lg" onClick={onRestart}>
+            Try again
+          </Button>
+        </div>
+      </Panel>
     );
   }
 
   // Active phase
   const posInScale = sequenceIndex % (scaleNotes.length || 1);
+  const masteryPct = Math.min((consecutiveCorrect / 3) * 100, 100);
 
   return (
-    <div
-      style={{
-        background: 'var(--bg-surface)',
-        border: '1px solid var(--border-subtle)',
-        borderRadius: 10,
-        padding: '20px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 16,
-      }}
+    <Panel
+      title="Sequence practice"
+      headingLevel={3}
+      actions={
+        <>
+          <span className="text-[13px] text-muted">
+            Score:{' '}
+            <span className="tabular font-mono text-ink">
+              {score}/{total}
+            </span>
+          </span>
+          <Button size="sm" onClick={onEnd}>
+            End
+          </Button>
+        </>
+      }
     >
-      {/* Header row */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
-        <span className="tabular"
-          style={{ fontSize: 13, color: 'var(--text-muted)' }}
-        >
-          Score: {score}/{total}
-        </span>
-        <button
-          type="button"
-          onClick={onEnd}
-          style={{
-            padding: '4px 12px',
-            background: 'var(--bg-elevated)',
-            color: 'var(--text-secondary)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: 6,
-            fontSize: 12,
-            cursor: 'pointer',
-          }}
-        >
-          End
-        </button>
-      </div>
+      <div className="flex flex-col gap-4">
+        {justLearnedMessage && <Notice tone="success">{justLearnedMessage}</Notice>}
 
-      {/* Just-learned celebration */}
-      {justLearnedMessage && (
-        <div
-          style={{
-            padding: '10px 14px',
-            background: 'var(--correct-soft)',
-            border: '1px solid var(--correct-line)',
-            borderRadius: 8,
-            color: 'var(--correct)',
-            fontSize: 13,
-            fontWeight: 500,
-            textAlign: 'center',
-          }}
-        >
-          {justLearnedMessage}
-        </div>
-      )}
-
-      {/* Current target note */}
-      <div
-        style={{
-          background: 'var(--bg-elevated)',
-          borderRadius: 8,
-          padding: '20px 16px',
-          textAlign: 'center',
-        }}
-      >
-        <p
-          style={{
-            fontSize: 12,
-            color: 'var(--text-muted)',
-            margin: '0 0 8px 0',
-          }}
-        >
-          Play the next note in the sequence:
-        </p>
-        <p
-          style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: 40,
-            color: 'var(--accent-primary)',
-            margin: 0,
-            lineHeight: 1,
-          }}
-        >
-          {scaleNotes[posInScale] ?? '—'}
-        </p>
-        <p
-          style={{
-            fontSize: 12,
-            color: 'var(--text-muted)',
-            margin: '8px 0 0 0',
-          }}
-        >
-          Note {posInScale + 1} of {scaleNotes.length}
-        </p>
-      </div>
-
-      {/* Scale note chips */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 4,
-          justifyContent: 'center',
-          flexWrap: 'wrap',
-        }}
-      >
-        {scaleNotes.map((note, i) => (
-          <span
-            key={i}
-            style={{
-              padding: '3px 8px',
-              borderRadius: 6,
-              fontSize: 12,
-              fontWeight: 500,
-              background:
-                i === posInScale
-                  ? 'var(--accent-primary)'
-                  : i < posInScale
-                  ? 'var(--correct-soft)'
-                  : 'var(--bg-elevated)',
-              color:
-                i === posInScale
-                  ? 'var(--on-accent)'
-                  : i < posInScale
-                  ? 'var(--correct)'
-                  : 'var(--text-muted)',
-              border:
-                i < posInScale
-                  ? '1px solid var(--correct-line)'
-                  : '1px solid var(--border-subtle)',
-            }}
-          >
-            {note}
-          </span>
-        ))}
-      </div>
-
-      {/* Mastery progress */}
-      <div
-        style={{
-          background: 'var(--bg-elevated)',
-          borderRadius: 8,
-          padding: '12px 14px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 6,
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            fontSize: 12,
-          }}
-        >
-          <span style={{ color: 'var(--text-muted)' }}>
-            Mastery: {selectedRoot} {SCALES[selectedScale]?.name ?? selectedScale}
-          </span>
-          <span style={{ color: 'var(--text-body)' }}>
-            {consecutiveCorrect}/3 at {metronomeBpm} BPM
-          </span>
-        </div>
-        <div
-          style={{
-            height: 6,
-            background: 'var(--border-subtle)',
-            borderRadius: 3,
-            overflow: 'hidden',
-          }}
-        >
-          <div
-            style={{
-              height: '100%',
-              width: `${Math.min((consecutiveCorrect / 3) * 100, 100)}%`,
-              background:
-                consecutiveCorrect >= 3
-                  ? 'var(--correct)'
-                  : 'var(--accent-primary)',
-              borderRadius: 3,
-              transition: 'width 400ms ease',
-            }}
-          />
-        </div>
-        {metronomeBpm < 120 && (
-          <p
-            style={{
-              fontSize: 11,
-              color: 'var(--accent-primary)',
-              margin: 0,
-            }}
-          >
-            Set metronome to 120 BPM to earn mastery
+        {/* Current target note */}
+        <div className="rounded-control bg-sunken px-4 py-5 text-center">
+          <p className="text-xs text-muted">Play the next note in the sequence:</p>
+          <p className="mt-2 text-[44px] leading-none font-extrabold tracking-[-0.02em] text-ink">
+            {scaleNotes[posInScale] ?? '—'}
           </p>
-        )}
-      </div>
+          <p className="mt-2 text-xs text-muted">
+            Note <span className="tabular font-mono">{posInScale + 1}</span> of{' '}
+            <span className="font-mono">{scaleNotes.length}</span>
+          </p>
+        </div>
 
-      <p
-        style={{
-          fontSize: 12,
-          color: 'var(--text-muted)',
-          textAlign: 'center',
-          margin: 0,
-        }}
-      >
-        Play the notes on the fretboard below, in order
-      </p>
-    </div>
+        {/* Scale notes: done in ink, current in the accent, upcoming outlined */}
+        <ol aria-label="Scale notes" className="flex flex-wrap justify-center gap-1.5">
+          {scaleNotes.map((note, i) => (
+            <li
+              key={i}
+              aria-current={i === posInScale ? 'step' : undefined}
+              className={cn(
+                'inline-flex h-7 min-w-8 items-center justify-center rounded-full border px-2.5 text-xs font-bold transition-colors duration-150',
+                i === posInScale
+                  ? 'border-accent bg-accent text-on-accent'
+                  : i < posInScale
+                    ? 'border-ink bg-ink text-surface'
+                    : 'border-line-strong bg-surface text-muted',
+              )}
+            >
+              {note}
+            </li>
+          ))}
+        </ol>
+
+        {/* Mastery progress */}
+        <div className="flex flex-col gap-2 border-t border-line pt-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-xs">
+            <span className="text-muted">
+              Mastery: {selectedRoot} {SCALES[selectedScale]?.name ?? selectedScale}
+            </span>
+            <span className="tabular font-mono text-ink">
+              {consecutiveCorrect}/3 at {metronomeBpm} BPM
+            </span>
+          </div>
+          <div aria-hidden="true" className="h-1 overflow-hidden rounded-full bg-line">
+            <div
+              className={cn(
+                'h-full rounded-full transition-[width] duration-[400ms] ease-out',
+                consecutiveCorrect >= 3 ? 'bg-correct' : 'bg-ink',
+              )}
+              style={{ width: `${masteryPct}%` }}
+            />
+          </div>
+          {metronomeBpm < 120 && (
+            <p className="text-xs text-muted">Set metronome to 120 BPM to earn mastery</p>
+          )}
+        </div>
+
+        <p className="text-center text-xs text-muted">
+          Play the notes on the fretboard below, in order
+        </p>
+      </div>
+    </Panel>
   );
 }

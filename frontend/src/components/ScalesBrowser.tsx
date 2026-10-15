@@ -1,44 +1,45 @@
 /**
  * ScalesBrowser.tsx
  *
- * Full Scales tab — lets users browse, search, and filter all built-in scales.
- * Selecting a scale loads it onto the fretboard and navigates to the Fretboard tab.
+ * The Library's Scales section: browse, search, and filter every built-in
+ * scale. Loading a scale puts it on the fretboard and returns to Practice.
  *
  * Features:
  * - Text search across scale name, key, category and description
- * - Category filter pills (All + each ScaleCategory)
- * - Scrollable grid of scale cards showing name, category badge, description,
- *   degree formula, and a "Load on Fretboard" action
- * - Currently selected scale is highlighted with an amber border
+ * - Category filter chips (All + each ScaleCategory)
+ * - A grid of scale cards: name, category, description, formula, a 12-cell
+ *   interval strip showing the scale's shape, and a "Load on fretboard" action
  *
  * Dependencies:
- * - useGuitarStore: selectedRoot, selectedScale, setSelectedScale, setActiveTab,
+ * - useGuitarStore: selectedScale, setSelectedScale, setActiveTab,
  *   scaleSearchQuery, setScaleSearchQuery, selectedCategory, setSelectedCategory
  * - musicTheory: SCALES, SCALE_CATEGORIES, searchScales, getScalesByCategory
  */
 
 import { useMemo } from 'react';
+import { Check } from 'lucide-react';
 import { useGuitarStore } from '../store/useGuitarStore';
 import {
   SCALES,
   SCALE_CATEGORIES,
   searchScales,
   getScalesByCategory,
+  type Scale,
   type ScaleCategory,
 } from '../data/musicTheory';
+import { Button, Chip, TextField, cn, PageTitle } from '../ui';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-/** A resolved scale entry with its registry key attached. */
+/** A scale with its registry key attached. */
 interface ScaleEntry {
   key: string;
-  name: string;
-  category: ScaleCategory;
-  description: string;
-  degrees: string[];
+  scale: Scale;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const CATEGORY_NAME = new Map(SCALE_CATEGORIES.map((c) => [c.id, c.name]));
 
 /**
  * Formats a degrees array into a spaced formula string.
@@ -50,23 +51,29 @@ function formatFormula(degrees: string[]): string {
   return degrees.join('  ');
 }
 
-/**
- * Builds the full flat list of all SCALES entries for browsing when no
- * search query is active.
- *
- * @returns Array of ScaleEntry objects sorted by category then name.
- */
-function getAllScaleEntries(): ScaleEntry[] {
-  return Object.entries(SCALES).map(([key, scale]) => ({
-    key,
-    name: scale.name,
-    category: scale.category,
-    description: scale.description ?? '',
-    degrees: scale.degrees,
-  }));
-}
-
 // ─── Sub-components ───────────────────────────────────────────────────────────
+
+/**
+ * IntervalStrip draws the scale's shape: one cell per semitone above the
+ * root, filled where the scale has a degree, the root cell in accent.
+ * Decorative; the text formula is the accessible version.
+ */
+function IntervalStrip({ intervals }: { intervals: number[] }) {
+  const inScale = new Set(intervals.map((iv) => iv % 12));
+  return (
+    <div aria-hidden="true" className="flex gap-[3px]">
+      {Array.from({ length: 12 }, (_, semis) => (
+        <span
+          key={semis}
+          className={cn(
+            'size-2.5 rounded-[2px]',
+            semis === 0 ? 'bg-accent' : inScale.has(semis) ? 'bg-ink' : 'border border-line-strong',
+          )}
+        />
+      ))}
+    </div>
+  );
+}
 
 /** Props for a single scale card in the browser grid. */
 interface ScaleCardProps {
@@ -76,119 +83,42 @@ interface ScaleCardProps {
 }
 
 /**
- * ScaleCard renders a single scale listing with name, category badge,
- * description (clamped to 2 lines), degree formula, and a load button.
- *
- * @param entry - The scale data to display.
- * @param isSelected - Whether this scale is currently active on the fretboard.
- * @param onLoad - Callback invoked with the scale key when the user clicks "Load on Fretboard".
+ * ScaleCard renders a single scale listing with name, category, description
+ * (clamped to 2 lines), formula, interval strip, and a load button.
  */
 function ScaleCard({ entry, isSelected, onLoad }: ScaleCardProps) {
+  const { key, scale } = entry;
   return (
-    <div
-      style={{
-        background: 'var(--bg-elevated)',
-        borderRadius: '8px',
-        padding: '16px',
-        border: isSelected
-          ? '1px solid var(--accent-primary)'
-          : '1px solid var(--border-subtle)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '8px',
-        transition: 'border-color 0.15s ease',
-      }}
-    >
-      {/* Scale name + category badge */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-        <span
-          style={{
-            fontSize: '15px',
-            fontWeight: isSelected ? 600 : 400,
-            color: isSelected ? 'var(--accent-primary)' : 'var(--text-body)',
-            lineHeight: 1.3,
-          }}
-        >
-          {entry.name}
-        </span>
-        <span
-          style={{
-            fontSize: '11px',
-            color: 'var(--text-muted)',
-            background: 'var(--bg-surface)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: '4px',
-            padding: '2px 6px',
-            whiteSpace: 'nowrap',
-            flexShrink: 0,
-          }}
-        >
-          {entry.category}
-        </span>
-      </div>
-
-      {/* Description */}
-      {entry.description && (
-        <p
-          style={{
-            fontSize: '12px',
-            color: 'var(--text-muted)',
-            margin: 0,
-            lineHeight: 1.45,
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-          } as React.CSSProperties}
-        >
-          {entry.description}
-        </p>
+    <li
+      className={cn(
+        'flex flex-col gap-3 rounded-panel border bg-surface p-4 transition-colors duration-150',
+        isSelected ? 'border-ink' : 'border-line hover:border-control',
       )}
-
-      {/* Degree formula */}
-      <div
-        style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: '13px',
-          color: 'var(--accent-glow)',
-          letterSpacing: '0.02em',
-        }}
-      >
-        {formatFormula(entry.degrees)}
+    >
+      <div>
+        <h3 className="text-[15px] leading-snug font-bold text-ink">{scale.name}</h3>
+        <p className="text-xs text-muted">{CATEGORY_NAME.get(scale.category) ?? scale.category}</p>
       </div>
 
-      {/* Load button */}
-      <button
-        type="button"
-        onClick={() => onLoad(entry.key)}
-        aria-label={isSelected ? `${entry.name}, currently loaded` : `Load ${entry.name} on fretboard`}
-        style={{
-          marginTop: '4px',
-          background: isSelected ? 'var(--accent-primary)' : 'var(--bg-elevated)',
-          color: isSelected ? 'var(--on-accent)' : 'var(--text-secondary)',
-          fontWeight: isSelected ? 600 : 400,
-          border: '1px solid var(--border-subtle)',
-          borderRadius: '6px',
-          padding: '6px 12px',
-          fontSize: '13px',
-          cursor: 'pointer',
-          transition: 'background 0.15s ease, color 0.15s ease',
-          alignSelf: 'flex-start',
-        }}
-        onMouseEnter={(e) => {
-          if (!isSelected) {
-            (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-primary)';
-          }
-        }}
-        onMouseLeave={(e) => {
-          if (!isSelected) {
-            (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-elevated)';
-          }
-        }}
+      {scale.description && <p className="line-clamp-2 text-[13px] leading-relaxed text-muted">{scale.description}</p>}
+
+      <div className="flex flex-col gap-2">
+        <p className="font-mono text-[13px] whitespace-pre-wrap text-ink">{formatFormula(scale.degrees)}</p>
+        <IntervalStrip intervals={scale.intervals} />
+      </div>
+
+      {/* "Loaded" stays focusable and still opens Practice; it just reads as done. */}
+      <Button
+        size="sm"
+        variant={isSelected ? 'ghost' : 'secondary'}
+        icon={isSelected ? Check : undefined}
+        onClick={() => onLoad(key)}
+        aria-label={isSelected ? `${scale.name}, currently loaded` : `Load ${scale.name} on fretboard`}
+        className={cn('mt-auto self-start', isSelected && 'border border-line')}
       >
-        {isSelected ? 'Currently Loaded' : 'Load on Fretboard'}
-      </button>
-    </div>
+        {isSelected ? 'Loaded' : 'Load on fretboard'}
+      </Button>
+    </li>
   );
 }
 
@@ -197,218 +127,101 @@ function ScaleCard({ entry, isSelected, onLoad }: ScaleCardProps) {
 /**
  * ScalesBrowser component.
  *
- * Renders the full Scales tab: a search bar, category filter pills,
- * and a scrollable grid of scale cards. Selecting a scale loads it on
- * the fretboard and navigates to the Fretboard tab.
- *
- * @returns The rendered scales browser panel.
+ * Renders the Scales section: a search field, category chips, a live result
+ * count, and the grid of scale cards.
  */
 export default function ScalesBrowser() {
-  const {
-    selectedScale,
-    setSelectedScale,
-    setActiveTab,
-    scaleSearchQuery,
-    setScaleSearchQuery,
-    selectedCategory,
-    setSelectedCategory,
-  } = useGuitarStore();
+  const selectedScale = useGuitarStore((s) => s.selectedScale);
+  const setSelectedScale = useGuitarStore((s) => s.setSelectedScale);
+  const setActiveTab = useGuitarStore((s) => s.setActiveTab);
+  const scaleSearchQuery = useGuitarStore((s) => s.scaleSearchQuery);
+  const setScaleSearchQuery = useGuitarStore((s) => s.setScaleSearchQuery);
+  const selectedCategory = useGuitarStore((s) => s.selectedCategory);
+  const setSelectedCategory = useGuitarStore((s) => s.setSelectedCategory);
 
-  /**
-   * Resolves the list of scale entries to display based on the current
-   * search query and active category filter.
-   */
   const visibleScales = useMemo<ScaleEntry[]>(() => {
-    if (scaleSearchQuery.trim()) {
-      // Search mode: category filter is ignored while a query is present
-      return searchScales(scaleSearchQuery).map(({ key, scale }) => ({
-        key,
-        name: scale.name,
-        category: scale.category,
-        description: scale.description ?? '',
-        degrees: scale.degrees,
-      }));
-    }
-
-    if (selectedCategory) {
-      return getScalesByCategory(selectedCategory as ScaleCategory).map(({ key, scale }) => ({
-        key,
-        name: scale.name,
-        category: scale.category,
-        description: scale.description ?? '',
-        degrees: scale.degrees,
-      }));
-    }
-
-    return getAllScaleEntries();
+    // Search mode: the category filter is ignored while a query is present
+    if (scaleSearchQuery.trim()) return searchScales(scaleSearchQuery);
+    if (selectedCategory) return getScalesByCategory(selectedCategory as ScaleCategory);
+    return Object.entries(SCALES).map(([key, scale]) => ({ key, scale }));
   }, [scaleSearchQuery, selectedCategory]);
 
-  /**
-   * Loads the given scale key onto the fretboard and switches to the Fretboard tab.
-   *
-   * @param key - The SCALES registry key to activate.
-   */
+  /** Loads the scale onto the fretboard and switches to Practice. */
   const handleLoad = (key: string) => {
     setSelectedScale(key);
     setActiveTab('fretboard');
   };
 
-  return (
-    <div
-      style={{
-        background: 'var(--bg-primary)',
-        minHeight: '100%',
-        padding: '24px',
-        boxSizing: 'border-box',
-      }}
-    >
-      {/* Page header */}
-      <h2
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: '22px',
-          fontWeight: 400,
-          color: 'var(--accent-glow)',
-          margin: '0 0 20px 0',
-        }}
-      >
-        Scale Library
-      </h2>
+  const clearFilters = () => {
+    setScaleSearchQuery('');
+    setSelectedCategory(null);
+  };
 
-      {/* Search input */}
-      <div style={{ marginBottom: '16px' }}>
-        <input
+  const query = scaleSearchQuery.trim();
+
+  return (
+    <div className="flex flex-col gap-5">
+      <PageTitle>Scale library</PageTitle>
+
+      <div className="flex flex-col gap-3">
+        <TextField
           type="search"
-          aria-label="Search scales"
+          label="Search scales"
+          hideLabel
           value={scaleSearchQuery}
           onChange={(e) => setScaleSearchQuery(e.target.value)}
           placeholder="Search scales..."
-          style={{
-            width: '100%',
-            boxSizing: 'border-box',
-            background: 'var(--bg-elevated)',
-            border: '1px solid var(--border-input)',
-            borderRadius: '6px',
-            padding: '10px 14px',
-            fontSize: '16px', // 16px keeps iOS Safari from zooming on focus
-            color: 'var(--text-body)',
-          }}
-          onFocus={(e) => {
-            e.currentTarget.style.borderColor = 'var(--accent-primary)';
-            e.currentTarget.style.boxShadow = '0 0 0 2px var(--accent-primary)33';
-          }}
-          onBlur={(e) => {
-            e.currentTarget.style.borderColor = 'var(--border-input)';
-            e.currentTarget.style.boxShadow = 'none';
-          }}
+          className="w-full sm:max-w-sm"
         />
-      </div>
 
-      {/* Category filter pills */}
-      <div
-        role="group"
-        aria-label="Scale category"
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: '8px',
-          marginBottom: '20px',
-        }}
-      >
-        {/* "All" pill */}
-        <button
-          type="button"
-          onClick={() => setSelectedCategory(null)}
-          aria-pressed={selectedCategory === null}
-          style={{
-            background: selectedCategory === null ? 'var(--accent-primary)' : 'var(--bg-elevated)',
-            color: selectedCategory === null ? 'var(--on-accent)' : 'var(--text-secondary)',
-            fontWeight: selectedCategory === null ? 600 : 400,
-            border: '1px solid var(--border-subtle)',
-            borderRadius: '6px',
-            padding: '6px 12px',
-            fontSize: '13px',
-            cursor: 'pointer',
-            transition: 'background 0.15s ease, color 0.15s ease',
-          }}
-        >
-          All
-        </button>
-
-        {SCALE_CATEGORIES.map((cat) => {
-          const isActive = selectedCategory === cat.id;
-          return (
-            <button
-              key={cat.id}
-              type="button"
-              onClick={() => setSelectedCategory(isActive ? null : cat.id)}
-              aria-pressed={isActive}
-              title={cat.description}
-              style={{
-                background: isActive ? 'var(--accent-primary)' : 'var(--bg-elevated)',
-                color: isActive ? 'var(--on-accent)' : 'var(--text-secondary)',
-                fontWeight: isActive ? 600 : 400,
-                border: '1px solid var(--border-subtle)',
-                borderRadius: '6px',
-                padding: '6px 12px',
-                fontSize: '13px',
-                cursor: 'pointer',
-                transition: 'background 0.15s ease, color 0.15s ease',
-              }}
-            >
-              {cat.name}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Result count (announced politely as the filter changes) */}
-      <div
-        role="status"
-        style={{
-          fontSize: '13px',
-          fontWeight: 500,
-          color: 'var(--text-secondary)',
-          marginBottom: '12px',
-        }}
-      >
-        {visibleScales.length} scale{visibleScales.length !== 1 ? 's' : ''}
-        {scaleSearchQuery.trim() ? ` matching "${scaleSearchQuery.trim()}"` : ''}
-      </div>
-
-      {/* Scale grid */}
-      {visibleScales.length === 0 ? (
-        <div
-          style={{
-            background: 'var(--bg-elevated)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: '8px',
-            padding: '32px 16px',
-            textAlign: 'center',
-            color: 'var(--text-muted)',
-            fontSize: '14px',
-          }}
-        >
-          No scales found. Try a different search term or category.
+        <div role="group" aria-label="Scale category" className="flex flex-wrap gap-2">
+          <Chip pressed={selectedCategory === null} onClick={() => setSelectedCategory(null)}>
+            All
+          </Chip>
+          {SCALE_CATEGORIES.map((cat) => {
+            const isActive = selectedCategory === cat.id;
+            return (
+              <Chip
+                key={cat.id}
+                pressed={isActive}
+                onClick={() => setSelectedCategory(isActive ? null : cat.id)}
+                title={cat.description}
+              >
+                {cat.name}
+              </Chip>
+            );
+          })}
         </div>
-      ) : (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-            gap: '12px',
-          }}
-        >
-          {visibleScales.map((entry) => (
-            <ScaleCard
-              key={entry.key}
-              entry={entry}
-              isSelected={entry.key === selectedScale}
-              onLoad={handleLoad}
-            />
-          ))}
-        </div>
-      )}
+      </div>
+
+      <div className="flex flex-col gap-3">
+        {/* Result count (announced politely as the filter changes) */}
+        <p role="status" className="text-[13px] text-muted">
+          <span className="tabular font-mono text-ink">{visibleScales.length}</span> scale
+          {visibleScales.length !== 1 ? 's' : ''}
+          {query ? ` matching "${query}"` : ''}
+        </p>
+
+        {visibleScales.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 rounded-panel border border-line bg-surface px-4 py-10 text-center">
+            <p className="text-sm text-muted">No scales found. Try a different search term or category.</p>
+            <Button variant="ghost" size="sm" onClick={clearFilters}>
+              Clear search
+            </Button>
+          </div>
+        ) : (
+          <ul className="grid grid-cols-1 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(260px,1fr))]">
+            {visibleScales.map((entry) => (
+              <ScaleCard
+                key={entry.key}
+                entry={entry}
+                isSelected={entry.key === selectedScale}
+                onLoad={handleLoad}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

@@ -1,143 +1,112 @@
 @import "tailwindcss";
 
-/* ========================================
-   STUDIO WALNUT DESIGN SYSTEM
-   Single dark theme — no light mode, no theme switching.
-   All color tokens defined as CSS custom properties
-   on :root so they cascade to all components.
-   ======================================== */
+/* ==========================================================================
+   SCALE TEACHER · MONOCHROME DESIGN SYSTEM
+   One neutral scale plus a single accent. Orange means exactly two things:
+   the root note, and whatever is sounding right now (plus the one primary
+   action on a screen). Everything else is ink on a near-white ground.
 
-:root {
-  color-scheme: dark;
+   Tokens live in @theme so Tailwind generates utilities from them:
+     bg-ground, bg-surface, bg-sunken, border-line, border-control,
+     text-ink, text-muted, bg-accent, text-accent-ink, text-correct, ...
+   Components use those utilities; nothing hard-codes a hex value.
+   ========================================================================== */
 
-  /* ---- Core backgrounds ---- */
-  --bg-primary: #1C1714;
-  --bg-surface: #231E1B;
-  --bg-elevated: #2A2320;
+@theme {
+  /* ---- Neutral scale ---- */
+  --color-ground: #FAFAFA;        /* page */
+  --color-surface: #FFFFFF;       /* panels, cards */
+  --color-sunken: #F2F2F2;        /* segmented-control tracks, wells */
+  --color-board: #F4F4F4;         /* fretboard wood */
+  --color-line: #E6E6E6;          /* panel hairlines (decorative) */
+  --color-line-strong: #D4D4D4;   /* dividers, fret wires */
+  --color-control: #8F8F8F;       /* input/select borders: >=3:1 on white */
+  --color-string: #A8A8A8;        /* guitar strings */
+  --color-muted: #6B6B6B;         /* secondary text: 4.6:1 on sunken */
+  --color-ink: #111111;           /* primary text, scale notes */
 
-  /* ---- Text ---- */
-  --text-body: #E8DFD0;
-  --text-secondary: #A89F90;
-  --text-muted: #9A958C;   /* ≥4.5:1 on every surface incl. the fretboard */
+  /* ---- The accent ---- */
+  --color-accent: #F25C05;        /* fills: root notes, playing ring, Play */
+  --color-on-accent: #111111;     /* text on accent fills (5.7:1) */
+  --color-accent-ink: #C2410C;    /* accent as text (5.2:1 on white) */
+  --color-accent-soft: color-mix(in srgb, #F25C05 10%, transparent);
 
-  /* ---- Accent / amber ---- */
-  --accent-primary: #EF9F27;
-  --accent-hover: #D4891F;
-  --accent-glow: #FAEEDA;
+  /* ---- Semantic states (only where they carry meaning) ---- */
+  --color-correct: #15803D;
+  --color-correct-soft: color-mix(in srgb, #15803D 10%, transparent);
+  --color-incorrect: #B91C1C;
+  --color-incorrect-soft: color-mix(in srgb, #B91C1C 8%, transparent);
 
-  /* ---- Guitar / fretboard ---- */
-  --fretboard-bg: #3D2B1A;
-  --fret-wire: #444441;
-  --nut-color: #5F5E5A;
-  --string-color: #8A8070;
-
-  /* ---- Interactive borders ---- */
-  --border-subtle: rgba(239, 159, 39, 0.15);
-  --border-input: rgba(239, 159, 39, 0.30);
-
-  /* ---- Text on amber fills (buttons, root notes, active pills) ---- */
-  --on-accent: #1C1714;
-
-  /* ---- Recessed surface (audio shelf panel) ---- */
-  --bg-sunken: #1A1512;
-
-  /* ---- Semantic ---- */
-  --correct: #4CAF50;
-  --incorrect: #EF4444;
-  --info: #60A5FA;
-
-  /* Tints of the semantic hues: -soft for fills, -line for borders,
-     -strong for emphasised borders on answered states. */
-  --correct-soft: color-mix(in srgb, var(--correct) 15%, transparent);
-  --correct-line: color-mix(in srgb, var(--correct) 38%, transparent);
-  --correct-strong: color-mix(in srgb, var(--correct) 60%, transparent);
-  --incorrect-soft: color-mix(in srgb, var(--incorrect) 12%, transparent);
-  --incorrect-line: color-mix(in srgb, var(--incorrect) 32%, transparent);
-  --incorrect-strong: color-mix(in srgb, var(--incorrect) 60%, transparent);
-  --accent-soft: color-mix(in srgb, var(--accent-primary) 15%, transparent);
-  --accent-line: color-mix(in srgb, var(--accent-primary) 32%, transparent);
-
-  /* ---- Fretboard notes ---- */
-  --note-root-bg: var(--accent-primary);
-  --note-root-fg: var(--on-accent);
-  --note-scale-bg: #854F0B;
-  --note-scale-fg: var(--accent-glow);
-  /* Lighter amber ring so scale notes clear 3:1 against the wood in Dots mode */
-  --note-scale-ring: #B8741A;
-  --note-muted-bg: var(--bg-elevated);
-  --note-muted-fg: var(--text-muted);
-  --note-muted-border: var(--fret-wire);
-  --chord-nut: #C8B89A;
-
-  /* ---- Fonts ---- */
-  --font-display: Georgia, 'Times New Roman', serif;
-  --font-body: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* ---- Type ---- */
+  --font-sans: 'Manrope Variable', 'Manrope', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
-  /* ---- Layout metrics ---- */
-  --nav-h: 52px;
-  --nav-row-h: 44px;            /* second nav row on phones */
-  --shelf-bar-h: 48px;          /* fixed "Controls" trigger bar */
-  --gutter: 16px;
+  /* ---- Radii ---- */
+  --radius-control: 7px;
+  --radius-panel: 10px;
+}
+
+/* ---- Layout metrics (not colours, so they stay plain custom properties) ---- */
+:root {
+  color-scheme: light;
+  --rail-w: 208px;
+  --aside-w: 300px;
+  --transport-h: 64px;
+  --tabbar-h: 60px;               /* phone bottom navigation */
+  --gutter: 24px;
   --gutter-x-left: max(var(--gutter), env(safe-area-inset-left));
   --gutter-x-right: max(var(--gutter), env(safe-area-inset-right));
 
-  /* ---- Fretboard density (fine pointer) ---- */
-  --fret-row-h: 36px;
-  --fret-cell-min: 28px;
+  /* Fretboard density (fine pointer); touch overrides below */
+  --fret-row-h: 40px;
+  --fret-cell-min: 30px;
   --note-hit-pad: 0px;
 }
 
-/* Touch screens get roomier fretboard cells and expanded note hit areas,
-   while the drawn note circles keep their size. */
+@media (max-width: 767px) {
+  :root { --gutter: 16px; --transport-h: 56px; }
+}
+
 @media (pointer: coarse) {
   :root {
-    --fret-row-h: 44px;
-    --fret-cell-min: 40px;
+    --fret-row-h: 46px;
+    --fret-cell-min: 42px;
     --note-hit-pad: 8px;
   }
 }
 
-/* ========================================
-   BASE LAYER
-   Sets default typography and background on
-   the document root elements.
-   ======================================== */
+/* ==========================================================================
+   BASE
+   ========================================================================== */
 
 @layer base {
   html {
-    font-family: var(--font-body);
+    font-family: var(--font-sans);
     scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
   }
 
   body {
-    background-color: var(--bg-primary);
-    color: var(--text-body);
+    background-color: var(--color-ground);
+    color: var(--color-ink);
+    font-size: 14px;
+    line-height: 1.5;
+    font-weight: 500;
     @apply antialiased;
   }
 
-  /* Numbers that update in place (BPM, scores, fret numbers, percentages)
-     keep a fixed width so neighbouring text doesn't jitter. */
-  .tabular { font-variant-numeric: tabular-nums; }
-
-  /* Touch: iOS Safari zooms the page when a text field under 16px gets
-     focus. !important is needed to beat the components' inline font sizes. */
-  @media (pointer: coarse) {
-    input:not([type='range']):not([type='checkbox']):not([type='radio']),
-    select,
-    textarea {
-      font-size: 16px !important;
-    }
-  }
+  ::selection { background: var(--color-accent-soft); color: var(--color-ink); }
 
   :focus-visible {
-    outline: 2px solid var(--accent-primary);
+    outline: 2px solid var(--color-ink);
     outline-offset: 2px;
   }
 
-  :focus:not(:focus-visible) {
-    outline: none;
-  }
+  :focus:not(:focus-visible) { outline: none; }
+
+  /* Programmatic focus targets (view mains, dialogs) need no ring */
+  main[tabindex='-1']:focus,
+  [role='dialog'][tabindex='-1']:focus { outline: none; }
 
   /* Touch: every control is at least a 44px target unless it opts out with
      data-dense and supplies its own hit area (fretboard and tab notes).
@@ -146,190 +115,42 @@
     :where(button, select, [role='tab'], input[type='range']):not([data-dense]) {
       min-height: 44px;
     }
-    :where(button):not([data-dense]) {
-      min-width: 44px;
+    :where(button):not([data-dense]) { min-width: 44px; }
+
+    /* iOS Safari zooms the page when a text field under 16px gets focus */
+    input:not([type='range']):not([type='checkbox']):not([type='radio']),
+    select,
+    textarea {
+      font-size: 16px !important;
     }
   }
 }
 
-/* ========================================
-   APP CHROME
-   Navigation bar and the space reserved for
-   the fixed audio-controls bar.
-   ======================================== */
+/* ==========================================================================
+   UTILITIES
+   ========================================================================== */
 
-.app-nav {
-  position: sticky;
-  top: 0;
-  z-index: 50;
-  background-color: var(--bg-surface);
-  border-bottom: 1px solid var(--border-subtle);
-}
+/* Numbers that update in place keep a fixed width so text doesn't jitter */
+.tabular { font-variant-numeric: tabular-nums; }
 
-/* Short landscape phones: the nav scrolls away so the fretboard keeps the height. */
-@media (max-height: 480px) {
-  .app-nav { position: relative; }
-}
-
-.app-nav__bar {
-  max-width: 1600px;
-  margin: 0 auto;
-  padding: 0 var(--gutter-x-right) 0 var(--gutter-x-left);
-  display: grid;
-  grid-template-columns: auto 1fr;
-  grid-template-areas: 'brand tabs';
-  align-items: center;
-  column-gap: 8px;
-  min-height: var(--nav-h);
-}
-
-.app-nav__brand { grid-area: brand; margin-right: 8px; }
-
-.app-nav__tabs {
-  grid-area: tabs;
-  display: flex;
-  align-items: stretch;
-  min-width: 0;
-}
-
-.nav-tab {
-  height: var(--nav-h);
-  padding: 0 8px;
-  font-size: 13px;
-  font-family: var(--font-body);
-  background: none;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: color 150ms ease, border-color 150ms ease;
-}
-
-@media (min-width: 1024px) {
-  .nav-tab { padding: 0 12px; }
-}
-
-/* One tab list per breakpoint. Plain CSS rather than Tailwind's hidden/md:flex,
-   because these unlayered rules would otherwise outrank the utilities. */
-.app-nav__tabs--narrow { display: none; }
-
-@media (max-width: 767px) {
-  .app-nav__tabs--wide { display: none; }
-  .app-nav__tabs--narrow { display: flex; }
-}
-
-/* Phones: brand + tools on top, a full-width tab row underneath. */
-@media (max-width: 767px) {
-  .app-nav__bar {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      'brand'
-      'tabs';
-  }
-
-  .app-nav__tabs {
-    margin: 0 calc(-1 * var(--gutter-x-right)) 0 calc(-1 * var(--gutter-x-left));
-    border-top: 1px solid var(--border-subtle);
-  }
-
-  .nav-tab {
-    height: var(--nav-row-h);
-    flex: 1 0 auto;
-    padding: 0 6px;
-  }
-}
-
-/* Primary tabs scroll only on the narrowest screens; "More" stays pinned
-   outside the scroller so its menu is never clipped. */
-.app-nav__scroller {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.app-nav__scroller::-webkit-scrollbar { display: none; }
-
-.app-nav__more { position: relative; flex-shrink: 0; display: flex; }
-.app-nav__more .nav-tab { flex: 0 0 auto; padding: 0 12px; }
-
-/* Smallest phones (320 px class): tighter tabs so all four plus More fit unscrolled. */
-@media (max-width: 359px) {
-  .nav-tab { font-size: 12px; padding: 0 4px; }
-  .app-nav__more .nav-tab { padding: 0 8px; }
-}
-
-.app-nav__menu {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  min-width: 180px;
-  background-color: var(--bg-elevated);
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  z-index: 100;
-  overflow: hidden;
-  animation: fade-in 150ms ease;
-}
-
-.app-nav__menu-item {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  min-height: 44px;
-  padding: 0 16px;
-  text-align: left;
-  font-size: 14px;
-  font-family: var(--font-body);
-  color: var(--text-secondary);
-  background: none;
-  border: none;
-  cursor: pointer;
-  transition: color 150ms ease, background-color 150ms ease;
-}
-
-.app-nav__menu-item:hover { color: var(--accent-primary); }
-
-.app-nav__menu-item[aria-current='page'] {
-  color: var(--accent-primary);
-  font-weight: 500;
-  background-color: var(--border-subtle);
-}
-
-/* Tab content clears the fixed Controls bar and the home indicator. */
-.app-content {
-  flex: 1;
-  padding-bottom: calc(var(--shelf-bar-h) + env(safe-area-inset-bottom));
-}
-
-/* Skip link: hidden until a keyboard user tabs to it. */
+/* Skip link: hidden until a keyboard user tabs to it */
 .skip-link {
   position: absolute;
   left: var(--gutter-x-left);
   top: 8px;
   z-index: 200;
   padding: 10px 14px;
-  border-radius: 6px;
-  background-color: var(--accent-primary);
-  color: var(--bg-primary);
+  border-radius: var(--radius-control);
+  background-color: var(--color-ink);
+  color: var(--color-surface);
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
   transform: translateY(calc(-100% - 16px));
 }
+.skip-link:focus-visible { transform: none; outline-color: var(--color-accent); }
 
-.skip-link:focus-visible { transform: none; }
-
-/* Programmatic focus targets (tab content, dialogs) don't need a ring. */
-main[tabindex='-1']:focus,
-[role='dialog'][tabindex='-1']:focus { outline: none; }
-
-/* Fretboard notes: the amber box-shadow already means "highlighted interval",
-   so keyboard focus uses the pale glow colour to stay distinguishable. */
-.note-hit:focus-visible { outline-color: var(--accent-glow); }
-
-/* Expands a small fretboard note's tap area without changing its drawn size. */
+/* Expands a small fretboard note's tap area without changing its drawn size */
 .note-hit { position: relative; }
-
 .note-hit::before {
   content: '';
   position: absolute;
@@ -337,121 +158,56 @@ main[tabindex='-1']:focus,
   border-radius: 50%;
 }
 
-/* ========================================
-   ANIMATIONS
-   Named keyframes used by the design system.
-   ======================================== */
+/* Native range inputs pick up the ink colour */
+input[type='range'] { accent-color: var(--color-ink); }
+input[type='checkbox'] { accent-color: var(--color-ink); }
 
-/** Pulses a note marker to draw attention when played */
-@keyframes note-pulse {
-  0%   { transform: scale(1); }
-  50%  { transform: scale(1.2); }
-  100% { transform: scale(1); }
-}
+/* ==========================================================================
+   MOTION
+   One authored moment: the playing ring walks the fretboard and the tab in
+   time. Everything else is quick state feedback.
+   ========================================================================== */
 
-/** Fades an element in from invisible to fully opaque */
 @keyframes fade-in {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
 
-/** Slides an element up from 8 px below its resting position while fading in */
-@keyframes slide-up {
-  from {
-    transform: translateY(8px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-/** Flashes the background green to signal a correct answer, then reverts */
-@keyframes answer-correct {
-  0%   { background-color: transparent; }
-  40%  { background-color: var(--correct); }
-  100% { background-color: transparent; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* The playing ring lands on each note with a short decelerating pulse */
+@keyframes ring-land {
+  from { transform: scale(1.35); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
 }
 
-/** Flashes the background red to signal an incorrect answer, then reverts */
-@keyframes answer-incorrect {
-  0%   { background-color: transparent; }
-  40%  { background-color: var(--incorrect); }
-  100% { background-color: transparent; }
+@keyframes beat-tick {
+  from { transform: scale(1.5); }
+  to   { transform: scale(1); }
 }
 
-/** Loading spinner rotation (ChordAI "Generating..." indicator) */
-@keyframes spin {
-  to { transform: rotate(360deg); }
+@keyframes wave-bar {
+  0%, 100% { transform: scaleY(0.4); }
+  50%      { transform: scaleY(1); }
 }
 
-/** Slides the audio shelf panel up from below the viewport */
-@keyframes shelf-slide-up {
-  from { transform: translateY(100%); }
-  to   { transform: translateY(0); }
-}
-
-/* ========================================
-   REDUCED MOTION
-   Spatial movement goes; fades and colour changes that confirm an action
-   stay. Inline animation styles need !important to be overridden.
-   ======================================== */
-
+/* Reduced motion: spatial movement goes; fades and colour changes that
+   confirm an action stay. Inline animation styles need !important. */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-
-  /* Entrances that slide (audio shelf, ear-training card) become plain fades */
   .motion-slide { animation-name: fade-in !important; }
-
-  /* Decorative loops (playing waveform, pending-question pulse) hold still;
-     the playing/pending state is still shown by colour and the labels. */
   .motion-loop { animation: none !important; }
-
-  /* The loading spinner keeps turning (it is the only "working" cue) but slower */
   .motion-spin { animation-duration: 2s !important; }
-
-  /* No hover/select growth or click pulse on notes and chord chips */
   .motion-scale,
-  .note-hit {
+  .note-hit,
+  .ring-land,
+  .beat-tick {
     transform: none !important;
     animation: none !important;
   }
-}
-
-/* ========================================
-   UTILITY CLASSES
-   Reusable single-purpose classes that
-   layer on top of Tailwind utilities.
-   ======================================== */
-
-/**
- * Applies the serif display typeface (Georgia) to headings
- * and decorative text that should feel warm and editorial.
- */
-.font-display {
-  font-family: var(--font-display);
-}
-
-/**
- * Active tab indicator: amber bottom border + amber text.
- * Applied to the currently selected navigation tab button.
- */
-.tab-active {
-  color: var(--accent-primary);
-  border-bottom: 2px solid var(--accent-primary);
-  font-weight: 500;
-}
-
-/**
- * Inactive tab: muted text, no border.
- * Transitions to amber text on hover.
- */
-.tab-inactive {
-  color: var(--text-secondary);
-  border-bottom: 2px solid transparent;
-}
-
-.tab-inactive:hover {
-  color: var(--accent-primary);
 }

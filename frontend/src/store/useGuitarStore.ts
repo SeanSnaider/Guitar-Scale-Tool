@@ -199,14 +199,42 @@ export interface GuitarState {
   setEarTrainingAnswers: (answers: Array<'correct' | 'incorrect' | 'pending'>) => void;
 
   // ---- Navigation ----
-  activeTab: 'fretboard' | 'scales' | 'chords' | 'ear-training' | 'reference' | 'progress' | 'chordai';
-  setActiveTab: (tab: 'fretboard' | 'scales' | 'chords' | 'ear-training' | 'reference' | 'progress' | 'chordai') => void;
+  /**
+   * Current view. The app shows five destinations: 'fretboard' (Practice),
+   * 'ear-training', 'chordai', 'library' and 'progress'. 'scales' and
+   * 'chords' open the Library on that section, and 'reference' opens
+   * Practice (its content lives in the Practice side column). The legacy
+   * ids stay valid so persisted state from older versions still loads.
+   */
+  activeTab: TabId;
+  setActiveTab: (tab: TabId) => void;
 
-  // ---- Audio Shelf ----
-  /** Whether the slide-up audio controls shelf is visible. */
+  // ---- Sound settings popover ----
+  /** Whether the transport bar's sound settings panel is open. */
   isAudioShelfOpen: boolean;
   setIsAudioShelfOpen: (open: boolean) => void;
+
+  // ---- Playback position (transient) ----
+  /**
+   * The fretboard position sounding right now during scale playback, so the
+   * fretboard can draw the playing ring in step with the tablature. Uses the
+   * store's string order (0 = lowest string). Null when nothing is playing.
+   */
+  playingPosition: { string: number; fret: number } | null;
+  /** Index into the current tab pattern of the sounding note; -1 when idle. */
+  playingIndex: number;
+  setPlaying: (index: number, pos: { string: number; fret: number } | null) => void;
 }
+
+export type TabId =
+  | 'fretboard'
+  | 'library'
+  | 'scales'
+  | 'chords'
+  | 'ear-training'
+  | 'reference'
+  | 'progress'
+  | 'chordai';
 
 // ---- Default values ----
 
@@ -266,7 +294,8 @@ export const useGuitarStore = create<GuitarState>()(
       // ---- Display Options ----
       displayMode: 'notes',
       setDisplayMode: (mode) => set({ displayMode: mode }),
-      showNonScaleNotes: true,
+      // Off by default: the first screen shows the scale, not a chromatic chart
+      showNonScaleNotes: false,
       setShowNonScaleNotes: (show) => set({ showNonScaleNotes: show }),
 
       // ---- Position System ----
@@ -456,9 +485,14 @@ export const useGuitarStore = create<GuitarState>()(
       activeTab: 'fretboard',
       setActiveTab: (tab) => set({ activeTab: tab }),
 
-      // ---- Audio Shelf ----
+      // ---- Sound settings popover ----
       isAudioShelfOpen: false,
       setIsAudioShelfOpen: (open) => set({ isAudioShelfOpen: open }),
+
+      // ---- Playback position ----
+      playingPosition: null,
+      playingIndex: -1,
+      setPlaying: (index, pos) => set({ playingIndex: index, playingPosition: pos }),
     }),
     {
       name: 'guitar-scale-tool-storage',

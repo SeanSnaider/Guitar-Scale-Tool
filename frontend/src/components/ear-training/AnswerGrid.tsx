@@ -1,18 +1,15 @@
 /**
  * AnswerGrid.tsx
  *
- * A 2-column grid of answer option cards used in the ear-training session
- * screen. Cards are tappable until an answer is submitted; once answered,
- * the correct card turns green, the selected wrong card turns red, and all
- * other cards are dimmed.
- *
- * Visual transitions are 150 ms for hover state and 300 ms for result
- * feedback colours, following the Studio Walnut motion spec.
- *
- * All colours are derived from Studio Walnut CSS custom-property tokens.
+ * A 2-column grid of answer cards used in the ear-training session screen.
+ * Cards are tappable until an answer is submitted; once answered, the correct
+ * card turns green with a check, the selected wrong card turns red with a
+ * cross, and all other cards are dimmed.
  */
 
-import React, { useState } from 'react';
+import React from 'react';
+import { Check, X } from 'lucide-react';
+import { cn } from '../../ui';
 
 /** A single answer option displayed as a card. */
 export interface AnswerOption {
@@ -43,7 +40,7 @@ export interface AnswerGridProps {
   /** The option value the user selected, or null if unanswered. */
   selectedAnswer: string | null;
   /**
-   * When true, all cards are non-interactive (pointer-events disabled).
+   * When true, all cards are non-interactive.
    * Set to true after the user answers and during the advance delay.
    */
   disabled: boolean;
@@ -52,10 +49,9 @@ export interface AnswerGridProps {
 /**
  * AnswerGrid
  *
- * Renders four answer cards in a responsive 2-column grid.  Before an answer
- * is submitted every card is interactive with a subtle hover effect.  After
- * submission the correct card is highlighted green, the wrong selection is
- * highlighted red, and the remaining cards are dimmed to 50% opacity.
+ * Renders the answer cards in a 2-column grid (one column on very narrow
+ * phones). Feedback colours always pair with an icon so the result never
+ * relies on colour alone.
  *
  * @param props - {@link AnswerGridProps}
  * @returns The rendered answer grid element.
@@ -68,52 +64,19 @@ export default function AnswerGrid({
   selectedAnswer,
   disabled,
 }: AnswerGridProps): React.ReactElement {
-  const [hoveredValue, setHoveredValue] = useState<string | null>(null);
+  const answered = result !== null;
 
   return (
     <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gap: 10,
-      }}
+      className="grid grid-cols-1 gap-2.5 min-[360px]:grid-cols-2"
       role="group"
       aria-label="Answer options"
     >
       {options.map((option) => {
         const isCorrect = option.value === correctAnswer;
         const isSelected = option.value === selectedAnswer;
-        const isHovered = hoveredValue === option.value;
-        const answered = result !== null;
-
-        /*
-         * Compute card background and border colour.
-         * Priority: answered state > hover state > default.
-         */
-        let background: string;
-        let borderColor: string;
-        let opacity = 1;
-        const cursor: React.CSSProperties['cursor'] = disabled ? 'default' : 'pointer';
-
-        if (answered) {
-          if (isCorrect) {
-            background = 'var(--correct-soft)';
-            borderColor = 'var(--correct-strong)';
-          } else if (isSelected) {
-            background = 'var(--incorrect-soft)';
-            borderColor = 'var(--incorrect-strong)';
-          } else {
-            background = 'var(--bg-elevated)';
-            borderColor = 'var(--border-subtle)';
-            opacity = 0.5;
-          }
-        } else if (isHovered && !disabled) {
-          background = 'var(--bg-primary)';
-          borderColor = 'var(--border-input)';
-        } else {
-          background = 'var(--bg-elevated)';
-          borderColor = 'var(--border-subtle)';
-        }
+        const showCorrect = answered && isCorrect;
+        const showWrong = answered && isSelected && !isCorrect;
 
         return (
           <button
@@ -122,83 +85,42 @@ export default function AnswerGrid({
             onClick={() => {
               if (!disabled) onAnswer(option.value);
             }}
-            onMouseEnter={() => !disabled && setHoveredValue(option.value)}
-            onMouseLeave={() => setHoveredValue(null)}
             disabled={disabled}
-            aria-label={`${option.label}${option.subtitle ? ` — ${option.subtitle}` : ''}`}
+            aria-label={`${option.label}${option.subtitle ? `, ${option.subtitle}` : ''}`}
             aria-pressed={isSelected}
-            style={{
-              background,
-              border: `1px solid ${borderColor}`,
-              borderRadius: 8,
-              padding: '14px 12px',
-              cursor,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 4,
-              opacity,
-              transition: 'background 300ms ease, border-color 300ms ease, opacity 300ms ease',
-              position: 'relative',
-              minHeight: 64,
-            }}
+            className={cn(
+              'relative flex min-h-16 flex-col items-center justify-center gap-1 rounded-control border px-3 py-3.5 text-center',
+              'transition-[background-color,border-color,opacity] duration-300',
+              'disabled:cursor-default',
+              showCorrect
+                ? 'border-correct bg-correct-soft'
+                : showWrong
+                  ? 'border-incorrect bg-incorrect-soft'
+                  : 'border-line bg-surface enabled:hover:border-control',
+              answered && !showCorrect && !showWrong && 'opacity-50',
+            )}
           >
-            {/* Feedback icon overlay */}
-            {answered && isCorrect && (
-              <span
+            {showCorrect && (
+              <Check
+                size={16}
+                strokeWidth={2.5}
                 aria-hidden="true"
-                style={{
-                  position: 'absolute',
-                  top: 6,
-                  right: 8,
-                  fontSize: 14,
-                  color: 'var(--correct)',
-                }}
-              >
-                ✓
-              </span>
+                className="absolute top-2 right-2 text-correct"
+              />
             )}
-            {answered && isSelected && !isCorrect && (
-              <span
+            {showWrong && (
+              <X
+                size={16}
+                strokeWidth={2.5}
                 aria-hidden="true"
-                style={{
-                  position: 'absolute',
-                  top: 6,
-                  right: 8,
-                  fontSize: 14,
-                  color: 'var(--incorrect)',
-                }}
-              >
-                ✗
-              </span>
+                className="absolute top-2 right-2 text-incorrect"
+              />
             )}
 
-            {/* Label */}
-            <span
-              style={{
-                fontSize: 15,
-                color: 'var(--accent-glow)',
-                fontWeight: 500,
-                textAlign: 'center',
-                lineHeight: 1.3,
-              }}
-            >
-              {option.label}
-            </span>
+            <span className="px-4 text-[15px] leading-tight font-bold text-ink">{option.label}</span>
 
-            {/* Optional subtitle */}
             {option.subtitle && (
-              <span
-                style={{
-                  fontSize: 12,
-                  color: 'var(--text-muted)',
-                  textAlign: 'center',
-                  lineHeight: 1.2,
-                }}
-              >
-                {option.subtitle}
-              </span>
+              <span className="text-xs leading-tight text-muted">{option.subtitle}</span>
             )}
           </button>
         );
