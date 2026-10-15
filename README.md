@@ -1,4 +1,4 @@
-# Guitar Learning Tool
+# Scale Teacher
 
 A browser-based guitar practice app that listens to what you play. Strum a chord into
 your mic and it names it, using FFT analysis in the browser with no backend inference and
@@ -82,7 +82,7 @@ magnitudes makes loudness drop out.
 
 ## Other features
 
-Chord detection is the part I find most interesting, but it's one tab out of eight. The
+Chord detection is the part I find most interesting, but it's one tab out of seven. The
 rest of the app is a fretboard trainer.
 
 **Interactive fretboard.** 48 scales across 10 categories — the modes, pentatonics, bebop
@@ -90,9 +90,6 @@ and jazz scales, plus exotic sets like hirajoshi, persian, and double harmonic. 
 (standard, drop D/C, DADGAD, four open tunings, half/whole step down, 7- and 8-string).
 Notes render as dots, note names, intervals, or position patterns, with CAGED (5 positions)
 and three-note-per-string (7 patterns) overlays.
-
-**Practice mode.** Three exercise types — note identification, scale sequence, and interval
-recognition — each at easy, medium, or hard difficulty, run against a metronome.
 
 **Ear training.** A separate 10-question quiz flow with four modes: intervals, single
 notes, scale identification, and fretboard sequence.
@@ -102,7 +99,8 @@ learned after 3 consecutive correct attempts at BPM ≥ 120. `is_learned` is sti
 earned — a later miss resets your streak but doesn't take the badge back. XP, levels, and
 achievement unlocks sit on top of that in the Zustand store, with a progress dashboard.
 
-**ChordAI.** Detect a chord, pick a genre, and get a progression back from Claude. Before
+**ChordAI.** Detect a chord, pick a genre, and get a progression back from Claude
+(Sonnet 5.5). Before
 the first request the app pulls your chord stats and scale mastery from the backend in
 parallel and formats them into a practice-history block appended to the system prompt, so
 suggestions are grounded in what you've actually been playing. The response carries a
@@ -111,13 +109,14 @@ conversation going.
 
 **Practice Coach.** An Express sidecar streams a multi-turn agent over SSE (`thought`,
 `chunk`, `answer` events), with music-theory lookup and research-paper search available as
-tools mid-stream.
+tools mid-stream. It lives outside this branch for now and isn't in the current app.
 
 **Persistence.** FastAPI + SQLite behind 4 routers and 13 endpoints, storing practice
 sessions, scale mastery, scale attempts, and chord detections. Scoped by a client-generated
-`X-Session-ID` header — no accounts, no auth, local-first.
+`X-Session-ID` header — no accounts, no auth, local-first. This server is being phased
+out; without it the app keeps your progress in the browser (localStorage).
 
-**Tests.** 318 Vitest cases on the frontend and 50 async pytest cases against an in-memory
+**Tests.** 320 Vitest cases on the frontend and 50 async pytest cases against an in-memory
 SQLite database on the backend.
 
 Audio synthesis is hand-rolled Web Audio (ADSR envelopes, no Tone.js), and the metronome
@@ -126,7 +125,8 @@ uses look-ahead scheduling so it doesn't drift at high BPM.
 ## Stack
 
 Three services that run independently. The frontend talks to both backends; they never
-talk to each other.
+talk to each other. The FastAPI backend is being phased out, and the agent server isn't in
+this branch.
 
 ```
 Browser (React SPA)
@@ -156,8 +156,9 @@ instead.
 
 ## Running it
 
-The frontend runs on its own. Start the backend if you want progress to persist, and the
-agent server if you want the Practice Coach tab.
+The frontend runs on its own and keeps progress in the browser. The backend adds server-side
+history (it's being phased out). The agent server and its Practice Coach aren't in this
+branch.
 
 ```bash
 git clone https://github.com/SeanSnaider/Guitar-Scale-Tool

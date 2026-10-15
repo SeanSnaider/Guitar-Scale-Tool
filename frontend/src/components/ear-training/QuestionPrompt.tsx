@@ -107,13 +107,12 @@ export default function QuestionPrompt({
           justifyContent: 'center',
           transition: 'border-color 150ms ease, box-shadow 150ms ease',
           boxShadow: isHovered && !isDisabled
-            ? '0 0 12px rgba(239, 159, 39, 0.3)'
+            ? '0 0 12px var(--accent-line)'
             : 'none',
           borderColor: isHovered && !isDisabled
             ? 'var(--accent-glow)'
             : 'var(--accent-primary)',
           opacity: isDisabled ? 0.45 : 1,
-          outline: 'none',
         }}
       >
         {isPlaying ? (
@@ -208,6 +207,7 @@ function AudioWaveIcon(): React.ReactElement {
       aria-hidden="true"
     >
       <span
+        className="motion-loop"
         style={{
           ...barBase,
           height: 8,
@@ -215,6 +215,7 @@ function AudioWaveIcon(): React.ReactElement {
         }}
       />
       <span
+        className="motion-loop"
         style={{
           ...barBase,
           height: 16,
@@ -222,6 +223,7 @@ function AudioWaveIcon(): React.ReactElement {
         }}
       />
       <span
+        className="motion-loop"
         style={{
           ...barBase,
           height: 10,

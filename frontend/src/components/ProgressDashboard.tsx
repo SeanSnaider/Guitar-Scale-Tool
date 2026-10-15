@@ -122,7 +122,7 @@ function StatTile({ label, value, sub }: StatTileProps) {
       </div>
       <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>{label}</div>
       {sub && (
-        <div style={{ fontSize: '11px', color: 'var(--text-muted)', opacity: 0.7, marginTop: '2px' }}>
+        <div className="tabular" style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
           {sub}
         </div>
       )}
@@ -166,7 +166,7 @@ function XpBar({ xp, level }: XpBarProps) {
           style={{
             fontSize: '22px',
             fontWeight: 700,
-            color: '#1C1714',
+            color: 'var(--on-accent)',
             fontFamily: 'var(--font-display)',
           }}
         >
@@ -235,6 +235,11 @@ type DashTab = 'overview' | 'learned' | 'sessions' | 'chords' | 'scales';
  *
  * @returns The rendered progress dashboard panel.
  */
+/** fetch() rejects with a TypeError ("Failed to fetch" / "Load failed" / "NetworkError…") when the server is unreachable. */
+function isNetworkError(message: string): boolean {
+  return /failed to fetch|load failed|networkerror|network request failed/i.test(message);
+}
+
 export default function ProgressDashboard() {
   // ---- Remote data ----
   const [backendStats, setBackendStats] = useState<BackendUserStats | null>(null);
@@ -333,7 +338,7 @@ export default function ProgressDashboard() {
     cursor: 'pointer',
     transition: 'background 0.15s ease, color 0.15s ease',
     background: isActive ? 'var(--accent-primary)' : 'transparent',
-    color: isActive ? '#1C1714' : 'var(--text-muted)',
+    color: isActive ? 'var(--on-accent)' : 'var(--text-muted)',
     fontWeight: isActive ? 600 : 400,
     textTransform: 'capitalize' as const,
   });
@@ -369,36 +374,43 @@ export default function ProgressDashboard() {
           Your Progress
         </h2>
         <button
+          type="button"
           onClick={fetchAll}
+          disabled={loading}
+          aria-busy={loading}
           style={{
             fontSize: '12px',
             color: 'var(--text-muted)',
             background: 'transparent',
             border: 'none',
-            cursor: 'pointer',
+            cursor: loading ? 'default' : 'pointer',
             padding: '4px 8px',
+            opacity: loading ? 0.6 : 1,
           }}
         >
-          Refresh
+          {loading ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>
 
-      {/* Backend error notice (non-blocking) */}
+      {/* Sync notice (non-blocking). The server is optional and being phased
+          out, so an unreachable server is an expected state, not an alarm. */}
       {error && (
         <div
+          role="status"
           style={{
-            background: 'rgba(239,68,68,0.08)',
-            border: '1px solid rgba(239,68,68,0.3)',
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border-subtle)',
             borderRadius: '8px',
             padding: '10px 14px',
-            fontSize: '12px',
-            color: 'var(--incorrect)',
+            fontSize: '13px',
+            lineHeight: 1.45,
+            color: 'var(--text-secondary)',
             marginBottom: '16px',
           }}
         >
-          {error.includes('Failed to fetch')
-            ? 'Backend not reachable — showing local data only. Start the server: cd backend && uvicorn app.main:app --reload'
-            : error}
+          {isNetworkError(error)
+            ? 'Showing progress saved in this browser. Session history and chord stats come from the sync server, which isn’t available right now.'
+            : `Couldn’t load synced progress (${error}). Showing progress saved in this browser.`}
         </div>
       )}
 
@@ -416,7 +428,9 @@ export default function ProgressDashboard() {
         {(['overview', 'learned', 'sessions', 'chords', 'scales'] as DashTab[]).map((tab) => (
           <button
             key={tab}
+            type="button"
             onClick={() => setDashTab(tab)}
+            aria-pressed={activeTab === tab}
             style={tabButtonStyle(activeTab === tab)}
           >
             {tab === 'learned' ? 'Learned' : tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -512,11 +526,11 @@ export default function ProgressDashboard() {
                         key={a}
                         style={{
                           padding: '3px 10px',
-                          background: 'rgba(239,159,39,0.15)',
+                          background: 'var(--accent-soft)',
                           color: 'var(--accent-primary)',
                           fontSize: '12px',
                           borderRadius: '12px',
-                          border: '1px solid rgba(239,159,39,0.3)',
+                          border: '1px solid var(--accent-line)',
                         }}
                       >
                         {a.replace(/_/g, ' ')}
@@ -544,7 +558,7 @@ export default function ProgressDashboard() {
                 border: '1px solid var(--border-subtle)',
                 cursor: 'pointer',
                 background: learnedCategoryFilter === 'all' ? 'var(--accent-primary)' : 'var(--bg-elevated)',
-                color: learnedCategoryFilter === 'all' ? '#1C1714' : 'var(--text-secondary)',
+                color: learnedCategoryFilter === 'all' ? 'var(--on-accent)' : 'var(--text-secondary)',
                 fontWeight: learnedCategoryFilter === 'all' ? 600 : 400,
               }}
             >
@@ -565,7 +579,7 @@ export default function ProgressDashboard() {
                     border: '1px solid var(--border-subtle)',
                     cursor: 'pointer',
                     background: isActive ? 'var(--accent-primary)' : 'var(--bg-elevated)',
-                    color: isActive ? '#1C1714' : 'var(--text-secondary)',
+                    color: isActive ? 'var(--on-accent)' : 'var(--text-secondary)',
                     fontWeight: isActive ? 600 : 400,
                   }}
                 >
@@ -807,11 +821,11 @@ export default function ProgressDashboard() {
                     key={item.chord}
                     style={{
                       padding: '3px 10px',
-                      background: 'rgba(239,159,39,0.15)',
+                      background: 'var(--accent-soft)',
                       color: 'var(--accent-primary)',
                       fontSize: '12px',
                       borderRadius: '6px',
-                      border: '1px solid rgba(239,159,39,0.3)',
+                      border: '1px solid var(--accent-line)',
                     }}
                   >
                     {item.chord} x{item.count}
@@ -912,9 +926,9 @@ export default function ProgressDashboard() {
                     <span
                       style={{
                         fontSize: '11px',
-                        background: 'rgba(76,175,80,0.15)',
+                        background: 'var(--correct-soft)',
                         color: 'var(--correct)',
-                        border: '1px solid rgba(76,175,80,0.3)',
+                        border: '1px solid var(--correct-line)',
                         padding: '2px 8px',
                         borderRadius: '10px',
                       }}

@@ -93,15 +93,15 @@ export default function AnswerGrid({
         let background: string;
         let borderColor: string;
         let opacity = 1;
-        let cursor: React.CSSProperties['cursor'] = disabled ? 'default' : 'pointer';
+        const cursor: React.CSSProperties['cursor'] = disabled ? 'default' : 'pointer';
 
         if (answered) {
           if (isCorrect) {
-            background = 'rgba(76, 175, 80, 0.2)';
-            borderColor = 'rgba(76, 175, 80, 0.6)';
+            background = 'var(--correct-soft)';
+            borderColor = 'var(--correct-strong)';
           } else if (isSelected) {
-            background = 'rgba(239, 68, 68, 0.2)';
-            borderColor = 'rgba(239, 68, 68, 0.6)';
+            background = 'var(--incorrect-soft)';
+            borderColor = 'var(--incorrect-strong)';
           } else {
             background = 'var(--bg-elevated)';
             borderColor = 'var(--border-subtle)';
@@ -140,7 +140,6 @@ export default function AnswerGrid({
               gap: 4,
               opacity,
               transition: 'background 300ms ease, border-color 300ms ease, opacity 300ms ease',
-              outline: 'none',
               position: 'relative',
               minHeight: 64,
             }}

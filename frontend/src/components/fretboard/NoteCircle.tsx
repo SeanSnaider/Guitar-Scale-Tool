@@ -33,37 +33,82 @@ export interface NoteCircleProps {
    * to highlight a particular interval.
    */
   isHighlighted?: boolean;
+  /**
+   * Draws the note hollow (ring + label, no fill) to mark it as outside the
+   * selected position. Ignored for the `muted` variant, which is always hollow.
+   */
+  dimmed?: boolean;
   /** Optional click handler forwarded to the underlying button. */
   onClick?: () => void;
   /** Tooltip text shown on hover. */
   title?: string;
+  /** Full accessible name (string, fret, role). Falls back to `title`, then the note. */
+  ariaLabel?: string;
+  /** Roving tabindex from the parent grid: 0 for the one tabbable note, -1 otherwise. */
+  tabIndex?: number;
+  /** Grid coordinates, read by the fretboard's arrow-key handler. */
+  stringIndex?: number;
+  fret?: number;
+  /** Called when the note receives focus (keeps the grid's roving position in sync). */
+  onFocus?: () => void;
 }
 
-/** Per-variant dimension and colour constants. */
+/** A border as longhands (see the style block below for why). */
+interface BorderSpec {
+  width: number;
+  style: 'none' | 'solid' | 'dashed';
+  color: string;
+}
+
+/** Per-variant dimensions and colours, all from the fretboard tokens in index.css. */
 const VARIANT_STYLES: Record<
   NoteVariant,
-  { size: number; background: string; color: string; fontWeight: string; fontSize: number }
+  { size: number; background: string; color: string; fontWeight: string; fontSize: number; border: BorderSpec }
 > = {
   root: {
     size: 26,
-    background: '#EF9F27',
-    color: '#1C1714',
+    background: 'var(--note-root-bg)',
+    color: 'var(--note-root-fg)',
     fontWeight: 'bold',
     fontSize: 11,
+    border: { width: 0, style: 'none', color: 'transparent' },
   },
   scale: {
     size: 22,
-    background: '#854F0B',
-    color: '#FAEEDA',
+    background: 'var(--note-scale-bg)',
+    color: 'var(--note-scale-fg)',
     fontWeight: '500',
     fontSize: 10,
+    // The fill alone is 2:1 against the wood; the ring brings the shape to 3.6:1
+    border: { width: 1.5, style: 'solid', color: 'var(--note-scale-ring)' },
   },
   muted: {
     size: 22,
-    background: '#2A2320',
-    color: '#888780',
+    // Opaque wood-coloured fill hides the string line behind the label
+    background: 'var(--fretboard-bg)',
+    color: 'var(--note-muted-fg)',
     fontWeight: '400',
     fontSize: 10,
+    // No ring: non-scale tones are context, so they read as a bare label.
+    // That keeps them clearly apart from hollow out-of-position scale notes.
+    border: { width: 0, style: 'none', color: 'transparent' },
+  },
+};
+
+/**
+ * Dimmed (outside the selected position) notes are drawn hollow instead of
+ * faded, so their labels keep AA contrast: ring + readable label on the wood.
+ */
+const DIMMED_STYLES: Record<'root' | 'scale', { background: string; color: string; border: BorderSpec }> = {
+  root: {
+    background: 'var(--fretboard-bg)',
+    color: 'var(--accent-primary)',
+    border: { width: 1.5, style: 'solid', color: 'var(--accent-primary)' },
+  },
+  scale: {
+    background: 'var(--fretboard-bg)',
+    color: 'var(--text-secondary)',
+    border: { width: 1.5, style: 'solid', color: 'var(--string-color)' },
   },
 };
 
@@ -82,13 +127,22 @@ export default function NoteCircle({
   displayText,
   variant,
   isHighlighted = false,
+  dimmed = false,
   onClick,
   title,
+  ariaLabel,
+  tabIndex,
+  stringIndex,
+  fret,
+  onFocus,
 }: NoteCircleProps): React.ReactElement {
   const [isHovered, setIsHovered] = useState(false);
   const [isPulsing, setIsPulsing] = useState(false);
 
-  const styles = VARIANT_STYLES[variant];
+  const styles =
+    dimmed && variant !== 'muted'
+      ? { ...VARIANT_STYLES[variant], ...DIMMED_STYLES[variant] }
+      : VARIANT_STYLES[variant];
 
   const handleClick = useCallback(() => {
     // Trigger the pulse animation
@@ -102,11 +156,19 @@ export default function NoteCircle({
   return (
     <button
       type="button"
+      // Opts out of the global 44px touch minimum; .note-hit grows the tap
+      // area on coarse pointers instead, keeping the drawn circle small.
+      data-dense
+      className="note-hit"
       onClick={handleClick}
+      onFocus={onFocus}
+      tabIndex={tabIndex}
+      data-string={stringIndex}
+      data-fret={fret}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       title={title ?? `${note}`}
-      aria-label={title ?? `${note}`}
+      aria-label={ariaLabel ?? title ?? `${note}`}
       style={{
         width: styles.size,
         height: styles.size,
@@ -120,7 +182,11 @@ export default function NoteCircle({
         alignItems: 'center',
         justifyContent: 'center',
         cursor: 'pointer',
-        border: variant === 'muted' ? '1px solid #444441' : 'none',
+        // Longhands rather than the `border` shorthand: var() inside shorthands
+        // isn't parsed by jsdom, and longhands read the same in the browser.
+        borderWidth: styles.border.width,
+        borderStyle: styles.border.style,
+        borderColor: styles.border.color,
         padding: 0,
         lineHeight: 1,
         flexShrink: 0,
@@ -133,8 +199,8 @@ export default function NoteCircle({
         animation: isPulsing ? 'note-pulse 100ms ease' : undefined,
         transition: isPulsing ? undefined : 'transform 100ms ease',
         boxShadow: highlightShadow,
-        // Ensure the button has no default focus ring (we rely on :focus-visible from global css)
-        outline: 'none',
+        // No inline outline: the global :focus-visible ring (pale glow via
+        // .note-hit) must be able to show. Inline styles would override it.
       }}
     >
       {displayText}

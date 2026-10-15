@@ -154,17 +154,23 @@ describe('NoteCircle variant styles', () => {
     expect(rootWidth).toBeGreaterThan(scaleWidth);
   });
 
-  it('muted variant has a border', () => {
+  it('muted variant is a bare label (no ring), distinct from hollow dimmed notes', () => {
     renderCircle({ variant: 'muted' });
     const btn = screen.getByRole('button');
-    expect(btn.style.border).not.toBe('none');
+    expect(btn.style.borderStyle).toBe('none');
   });
 
-  it('scale variant has no solid border color', () => {
-    // jsdom normalises `border: 'none'` as borderStyle=none, not `border='none'`
+  it('scale variant has a solid contrast ring (AA non-text contrast on the wood)', () => {
     renderCircle({ variant: 'scale' });
     const btn = screen.getByRole('button');
-    expect(btn.style.borderStyle).not.toBe('solid');
+    expect(btn.style.borderStyle).toBe('solid');
+  });
+
+  it('dimmed notes are drawn hollow with a ring', () => {
+    renderCircle({ variant: 'scale', dimmed: true });
+    const btn = screen.getByRole('button');
+    expect(btn.style.borderStyle).toBe('solid');
+    expect(btn.style.getPropertyValue('background')).toContain('--fretboard-bg');
   });
 
   it('root variant has no solid border color', () => {

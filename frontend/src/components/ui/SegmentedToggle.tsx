@@ -36,6 +36,8 @@ export interface SegmentedToggleProps {
   onChange: (value: string) => void;
   /** Optional extra class names applied to the outer container. */
   className?: string;
+  /** Accessible name for the group, e.g. "Display mode" or "Exercise type". */
+  ariaLabel?: string;
 }
 
 /**
@@ -53,6 +55,7 @@ export default function SegmentedToggle({
   value,
   onChange,
   className = '',
+  ariaLabel = 'Options',
 }: SegmentedToggleProps): React.ReactElement {
   const [hoveredValue, setHoveredValue] = useState<string | null>(null);
 
@@ -67,7 +70,7 @@ export default function SegmentedToggle({
         border: '1px solid var(--border-subtle)',
       }}
       role="group"
-      aria-label="Display mode"
+      aria-label={ariaLabel}
     >
       {options.map((opt) => {
         const isActive = opt.value === value;
@@ -92,7 +95,7 @@ export default function SegmentedToggle({
               transition: 'all 150ms ease',
               background: isActive ? 'var(--accent-primary)' : 'transparent',
               color: isActive
-                ? '#1C1714'
+                ? 'var(--on-accent)'
                 : isHovered
                 ? 'var(--accent-glow)'
                 : 'var(--text-secondary)',

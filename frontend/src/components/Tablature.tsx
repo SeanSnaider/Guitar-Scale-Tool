@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useGuitarStore } from '../store/useGuitarStore';
 import { audioEngine } from '../audio/AudioEngine';
 import {
@@ -77,10 +77,21 @@ export default function Tablature() {
     currentTuning,
     playbackDirection,
     metronome,
+    isPlayingScale: isPlaying,
+    setIsPlayingScale,
   } = useGuitarStore();
 
-  const [isPlaying, setIsPlaying] = useState(false);
+  // Playback state lives in the store (`isPlayingScale`) so the footer's
+  // "Play scale" button and this one drive the same BPM-synced player.
   const [activeNoteIndex, setActiveNoteIndex] = useState<number>(-1);
+  /** True while the engine has a schedule running for us. */
+  const scheduledRef = useRef(false);
+  /**
+   * True between asking the engine to start and its first note. The engine's
+   * start path calls stopScalePlayback (which reports -1) and may first await
+   * AudioContext initialisation; that -1 must not be read as "finished".
+   */
+  const startingRef = useRef(false);
 
   const scale = SCALES[selectedScale];
 
@@ -142,34 +153,61 @@ export default function Tablature() {
   // Wire AudioEngine callback to update the active note indicator
   useEffect(() => {
     audioEngine.onScaleNotePlay = (noteIndex: number) => {
-      setActiveNoteIndex(noteIndex);
-      if (noteIndex === -1) setIsPlaying(false);
+      if (noteIndex >= 0) {
+        startingRef.current = false;
+        setActiveNoteIndex(noteIndex);
+        return;
+      }
+      if (startingRef.current) return; // the engine's own reset while starting
+      setActiveNoteIndex(-1);
+      scheduledRef.current = false;
+      useGuitarStore.getState().setIsPlayingScale(false);
     };
-    return () => { audioEngine.onScaleNotePlay = null; };
+    return () => {
+      audioEngine.onScaleNotePlay = null;
+      // Leaving the tab stops playback and clears the shared flag
+      if (scheduledRef.current) audioEngine.stopScalePlayback();
+      scheduledRef.current = false;
+      useGuitarStore.getState().setIsPlayingScale(false);
+    };
   }, []);
+
+  // Start or stop the engine whenever the shared flag changes
+  useEffect(() => {
+    if (isPlaying && !scheduledRef.current) {
+      if (midiNotes.length === 0) {
+        setIsPlayingScale(false);
+        return;
+      }
+      startingRef.current = true;
+      scheduledRef.current = true;
+      audioEngine.scheduleScalePlayback(midiNotes, metronome.bpm);
+    } else if (!isPlaying && scheduledRef.current) {
+      scheduledRef.current = false;
+      startingRef.current = false;
+      audioEngine.stopScalePlayback(); // reports -1, which clears the playhead
+    }
+  }, [isPlaying, midiNotes, metronome.bpm, setIsPlayingScale]);
+
+  const togglePlayback = useCallback(
+    () => setIsPlayingScale(!useGuitarStore.getState().isPlayingScale),
+    [setIsPlayingScale]
+  );
 
   // Spacebar toggles scale playback
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Only capture space when not typing in an input
-      if (e.code !== 'Space') return;
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      // Global shortcut: only when nothing is focused. If a button, input,
+      // note, or dialog has focus, Space must keep doing its native job.
+      if (e.code !== 'Space' || e.repeat) return;
+      if (e.target !== document.body && e.target !== document.documentElement) return;
       e.preventDefault();
-
-      if (isPlaying) {
-        audioEngine.stopScalePlayback();
-        setIsPlaying(false);
-        setActiveNoteIndex(-1);
-      } else if (midiNotes.length > 0) {
-        audioEngine.scheduleScalePlayback(midiNotes, metronome.bpm);
-        setIsPlaying(true);
-      }
+      togglePlayback();
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlaying, midiNotes, metronome.bpm]);
+  }, [togglePlayback]);
 
   // Handle note click
   const handleNoteClick = (note: TabNote) => {
@@ -179,39 +217,32 @@ export default function Tablature() {
 
   if (!scale) {
     return (
-      <div className="p-4 bg-[var(--surface)] rounded-lg text-center text-[var(--text-muted)]">
+      <div className="p-4 bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg text-center text-[var(--text-muted)]">
         Select a scale to view tablature
       </div>
     );
   }
 
   return (
-    <div className="bg-[var(--surface)] rounded-lg p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-medium text-[var(--text)]">
+    <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg p-4">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 mb-3">
+        <h3 className="text-sm font-medium text-[var(--text-body)]">
           Tablature — {selectedRoot} {scale.name}
         </h3>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-[var(--text-muted)]">{metronome.bpm} BPM</span>
+          <span className="text-xs text-[var(--text-muted)] tabular">{metronome.bpm} BPM</span>
           <button
-            onClick={() => {
-              if (isPlaying) {
-                audioEngine.stopScalePlayback();
-                setIsPlaying(false);
-                setActiveNoteIndex(-1);
-              } else if (midiNotes.length > 0) {
-                audioEngine.scheduleScalePlayback(midiNotes, metronome.bpm);
-                setIsPlaying(true);
-              }
-            }}
+            type="button"
+            onClick={togglePlayback}
             className={`px-3 py-1 text-xs font-medium rounded transition-all ${
               isPlaying
-                ? 'bg-[var(--secondary)] text-[var(--bg)]'
-                : 'bg-[var(--primary)] text-[var(--bg)]'
+                ? 'bg-[var(--bg-elevated)] text-[var(--accent-primary)] ring-1 ring-[var(--accent-line)]'
+                : 'bg-[var(--accent-primary)] text-[var(--on-accent)] hover:bg-[var(--accent-hover)]'
             }`}
             title="Play/Stop scale (Space)"
+            aria-keyshortcuts="Space"
           >
-            {isPlaying ? '■ Stop' : '▶ Play'}
+            <span aria-hidden="true">{isPlaying ? '■' : '▶'}</span> {isPlaying ? 'Stop' : 'Play'}
           </button>
           <span className="text-xs text-[var(--text-muted)]">
             {displayPattern.length} notes
@@ -219,12 +250,13 @@ export default function Tablature() {
         </div>
       </div>
 
-      {/* Tab Display - Single continuous block that fills width */}
-      <div className="font-mono text-sm">
-        <div className="bg-[var(--bg)] rounded-lg p-3">
+      {/* Tab Display - fills the width, and scrolls sideways inside the card
+          (never the page) when 18+ columns don't fit on a phone */}
+      <div className="font-mono text-sm overflow-x-auto">
+        <div className="bg-[var(--bg-primary)] rounded-lg p-3 min-w-min">
           {/* String lines */}
           {tabStringNames.map((stringName, stringIdx) => (
-            <div key={stringIdx} className="flex items-center h-6">
+            <div key={stringIdx} className="flex items-center h-6 pointer-coarse:h-10">
               {/* String label */}
               <span className="w-6 text-xs text-[var(--text-muted)] font-bold flex-shrink-0">
                 {stringName}
@@ -238,7 +270,7 @@ export default function Tablature() {
                   return (
                     <div
                       key={noteIdx}
-                      className={`flex-1 text-center min-w-[24px] relative ${
+                      className={`flex-1 text-center min-w-[24px] pointer-coarse:min-w-[36px] relative ${
                         activeNoteIndex === noteIdx ? 'bg-white/10' : ''
                       }`}
                     >
@@ -248,21 +280,24 @@ export default function Tablature() {
                       )}
                       {isOnThisString ? (
                         <button
+                          type="button"
+                          data-dense
                           onClick={() => handleNoteClick(note)}
                           className={`
-                            min-w-[20px] h-5 px-1 inline-flex items-center justify-center rounded
-                            transition-all hover:scale-110 cursor-pointer text-xs
+                            min-w-[20px] h-5 pointer-coarse:min-w-[32px] pointer-coarse:h-8 px-1 inline-flex items-center justify-center rounded
+                            transition-all motion-safe:hover:scale-110 cursor-pointer text-xs
                             ${note.isRoot
-                              ? 'bg-[var(--secondary)] text-[var(--bg)] font-bold'
-                              : 'bg-[var(--primary)]/20 text-[var(--text)] hover:bg-[var(--primary)]/40'
+                              ? 'bg-[var(--note-root-bg)] text-[var(--note-root-fg)] font-bold'
+                              : 'bg-[var(--note-scale-bg)] text-[var(--note-scale-fg)] hover:bg-[var(--note-scale-ring)]'
                             }
                           `}
                           title={`${note.note} - Fret ${note.fret}`}
+                          aria-label={`${note.note}${note.isRoot ? ' (root)' : ''}, ${tabStringNames[stringIdx]} string, fret ${note.fret}`}
                         >
                           {note.fret}
                         </button>
                       ) : (
-                        <span className="text-[var(--border)]">-</span>
+                        <span aria-hidden="true" className="text-[var(--string-color)]">-</span>
                       )}
                     </div>
                   );
@@ -275,16 +310,16 @@ export default function Tablature() {
       </div>
 
       {/* Legend */}
-      <div className="mt-3 flex items-center gap-4 text-xs text-[var(--text-muted)]">
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--text-muted)]">
         <div className="flex items-center gap-1">
-          <span className="w-4 h-4 rounded bg-[var(--secondary)] inline-block" />
+          <span aria-hidden="true" className="w-4 h-4 rounded bg-[var(--note-root-bg)] inline-block" />
           <span>Root note</span>
         </div>
         <div className="flex items-center gap-1">
-          <span className="w-4 h-4 rounded bg-[var(--primary)]/20 inline-block" />
+          <span aria-hidden="true" className="w-4 h-4 rounded bg-[var(--note-scale-bg)] inline-block" />
           <span>Scale note</span>
         </div>
-        <span className="ml-auto">Click notes to play</span>
+        <span className="ml-auto">Select a note to hear it</span>
       </div>
     </div>
   );

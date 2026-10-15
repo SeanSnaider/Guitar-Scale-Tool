@@ -19,7 +19,7 @@
  * identical to the original implementation.
  */
 
-import { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useState } from 'react';
 import { useGuitarStore } from '../store/useGuitarStore';
 import { audioEngine } from '../audio/AudioEngine';
 import {
@@ -123,6 +123,99 @@ export default function Fretboard() {
     [scaleNotes, positions]
   );
 
+  /** A note is drawn at a cell when it's in the scale, or when muted notes are shown. */
+  const isCellRendered = useCallback(
+    (stringIndex: number, fret: number) =>
+      showNonScaleNotes ||
+      isNoteInScale(getNoteAtPosition(stringIndex, fret, currentTuning.notes), scaleNotes),
+    [showNonScaleNotes, currentTuning.notes, scaleNotes]
+  );
+
+  // ── Keyboard model ──────────────────────────────────────────────────────
+  // The board is an ARIA grid with a single tab stop (roving tabindex).
+  // `focusCell` is the last note focused; if a scale or filter change hides
+  // it, the tab stop falls back to the first drawn note in reading order.
+  const [focusCell, setFocusCell] = useState<{ s: number; f: number } | null>(null);
+
+  // At most 8 strings × 25 frets, so this is computed per render rather than memoized
+  const tabStop = ((): { s: number; f: number } | null => {
+    if (focusCell && focusCell.f <= numFrets && isCellRendered(focusCell.s, focusCell.f)) {
+      return focusCell;
+    }
+    for (const s of strings) {
+      for (const f of frets) {
+        if (isCellRendered(s, f)) return { s, f };
+      }
+    }
+    return null;
+  })();
+
+  /**
+   * Arrow keys move between drawn notes: left/right along a string, up/down to
+   * the nearest note on the neighbouring string. Home/End jump to the ends of
+   * the string. Enter/Space are left to the button, which plays the note.
+   */
+  const handleGridKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement;
+      if (target.dataset.string === undefined) return;
+      const s = Number(target.dataset.string);
+      const f = Number(target.dataset.fret);
+      const row = strings.indexOf(s);
+      const drawnFrets = (str: number) => frets.filter((fr) => isCellRendered(str, fr));
+
+      let next: { s: number; f: number } | null = null;
+      const onString = drawnFrets(s);
+      switch (event.key) {
+        case 'ArrowRight': {
+          const fr = onString.find((x) => x > f);
+          if (fr !== undefined) next = { s, f: fr };
+          break;
+        }
+        case 'ArrowLeft': {
+          const fr = [...onString].reverse().find((x) => x < f);
+          if (fr !== undefined) next = { s, f: fr };
+          break;
+        }
+        case 'Home':
+          if (onString.length) next = { s, f: onString[0] };
+          break;
+        case 'End':
+          if (onString.length) next = { s, f: onString[onString.length - 1] };
+          break;
+        case 'ArrowUp':
+        case 'ArrowDown': {
+          // Walk rows in the pressed direction until one has a drawn note,
+          // then take the note nearest the current fret.
+          const step = event.key === 'ArrowUp' ? -1 : 1;
+          for (let r = row + step; r >= 0 && r < strings.length; r += step) {
+            const candidates = drawnFrets(strings[r]);
+            if (candidates.length) {
+              const nearest = candidates.reduce((a, b) =>
+                Math.abs(b - f) < Math.abs(a - f) ? b : a
+              );
+              next = { s: strings[r], f: nearest };
+              break;
+            }
+          }
+          break;
+        }
+        default:
+          return;
+      }
+
+      event.preventDefault();
+      if (!next) return;
+      setFocusCell(next);
+      const el = event.currentTarget.querySelector<HTMLButtonElement>(
+        `[data-string="${next.s}"][data-fret="${next.f}"]`
+      );
+      el?.focus();
+      el?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    },
+    [strings, frets, isCellRendered]
+  );
+
   /** Plays the note at the clicked fret position and records it in the store. */
   const handleNoteClick = useCallback(
     (stringIndex: number, fret: number) => {
@@ -166,42 +259,57 @@ export default function Fretboard() {
       }
       // 'dots' and 'patterns' modes render no text label
 
+      // ── Accessible name and roving tab stop ───────────────────────────────
+      // Strings are numbered the way guitarists count them: 1 = highest.
+      const stringNumber = currentTuning.strings - stringIndex;
+      const where = `string ${stringNumber} (${ALL_NOTES[currentTuning.notes[stringIndex]]}), ${
+        fret === 0 ? 'open' : `fret ${fret}`
+      }`;
+      const degree = inScale && scale ? getScaleDegree(note, selectedRoot, scale) : '';
+      const a11y = {
+        stringIndex,
+        fret,
+        tabIndex: tabStop && tabStop.s === stringIndex && tabStop.f === fret ? 0 : -1,
+        onFocus: () => setFocusCell({ s: stringIndex, f: fret }),
+      };
+      const labelFor = (suffix: string) =>
+        `${note}${isRoot ? ', root' : degree ? `, degree ${degree}` : ''}, ${where}${suffix}`;
+
       // ── Non-scale note ────────────────────────────────────────────────────
       if (!inScale) {
         if (!showNonScaleNotes) return null;
+        // Drawn as a bare label on the wood (see NoteCircle) rather than faded,
+        // so it keeps AA contrast. Dots mode has no labels, so it gets a small dot.
         return (
-          <div
+          <NoteCircle
             key={`${stringIndex}-${fret}`}
-            style={{ opacity: 0.3 }}
-          >
-            <NoteCircle
-              note={note}
-              displayText={displayMode === 'notes' ? note : ''}
-              variant="muted"
-              isHighlighted={false}
-              onClick={() => handleNoteClick(stringIndex, fret)}
-              title={`${note} (not in scale)`}
-            />
-          </div>
+            note={note}
+            displayText={displayMode === 'dots' ? '·' : note}
+            variant="muted"
+            isHighlighted={false}
+            onClick={() => handleNoteClick(stringIndex, fret)}
+            title={`${note} (not in scale)`}
+            ariaLabel={labelFor(', not in scale')}
+            {...a11y}
+          />
         );
       }
 
       // ── Position-filtered note (out of selected position) ─────────────────
       if (selectedPosition !== null && !isInSelectedPosition) {
         return (
-          <div
+          <NoteCircle
             key={`${stringIndex}-${fret}`}
-            style={{ opacity: 0.2 }}
-          >
-            <NoteCircle
-              note={note}
-              displayText={displayText}
-              variant={isRoot ? 'root' : 'scale'}
-              isHighlighted={isHighlighted}
-              onClick={() => handleNoteClick(stringIndex, fret)}
-              title={note}
-            />
-          </div>
+            note={note}
+            displayText={displayText}
+            variant={isRoot ? 'root' : 'scale'}
+            dimmed
+            isHighlighted={isHighlighted}
+            onClick={() => handleNoteClick(stringIndex, fret)}
+            title={note}
+            ariaLabel={labelFor(', outside selected position')}
+            {...a11y}
+          />
         );
       }
 
@@ -215,6 +323,8 @@ export default function Fretboard() {
           isHighlighted={isHighlighted && !isRoot}
           onClick={() => handleNoteClick(stringIndex, fret)}
           title={`${note}${isRoot ? ' (Root)' : ''}`}
+          ariaLabel={labelFor('')}
+          {...a11y}
         />
       );
     },
@@ -229,25 +339,38 @@ export default function Fretboard() {
       highlightedIntervals,
       getPositionsForNote,
       handleNoteClick,
+      currentTuning.strings,
+      tabStop,
     ]
   );
 
   return (
     /* Outer wrapper: horizontal scroll on narrow viewports */
     <div style={{ overflowX: 'auto', width: '100%' }}>
+      <p id="fretboard-keys-hint" className="sr-only">
+        Arrow keys move between notes. Enter plays the selected note.
+      </p>
       {/* ── Fretboard container ──────────────────────────────────────────── */}
       <div
+        role="grid"
+        aria-label={`Fretboard, ${selectedRoot} ${scale?.name ?? ''}`.trim()}
+        aria-describedby="fretboard-keys-hint"
+        onKeyDown={handleGridKeyDown}
         style={{
           position: 'relative',
           borderRadius: 8,
           overflow: 'hidden',
           backgroundColor: 'var(--fretboard-bg)',
           boxShadow: '0 4px 24px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04)',
-          minWidth: 600,
+          // Wide enough for every fret cell plus the 40 px string-label column,
+          // so overflow:hidden (for the rounded corners) never clips high frets.
+          minWidth: `max(600px, calc(40px + ${frets.length} * var(--fret-cell-min)))`,
         }}
       >
-        {/* ── Fret numbers row ─────────────────────────────────────────── */}
+        {/* ── Fret numbers row (visual only; each note's label names its fret) ── */}
         <div
+          aria-hidden="true"
+          className="tabular"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -263,7 +386,7 @@ export default function Fretboard() {
               key={fret}
               style={{
                 flex: fretWidthRatios[i],
-                minWidth: 28,
+                minWidth: 'var(--fret-cell-min)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -285,10 +408,13 @@ export default function Fretboard() {
           return (
             <div
               key={stringIndex}
-              style={{ position: 'relative', display: 'flex', alignItems: 'center', height: 36 }}
+              role="row"
+              style={{ position: 'relative', display: 'flex', alignItems: 'center', height: 'var(--fret-row-h)' }}
             >
               {/* String name label */}
               <div
+                role="rowheader"
+                aria-label={`String ${currentTuning.strings - stringIndex}, ${stringNames[stringIndex]}`}
                 style={{
                   width: 40,
                   flexShrink: 0,
@@ -304,6 +430,7 @@ export default function Fretboard() {
 
               {/* The physical string line */}
               <div
+                aria-hidden="true"
                 style={{
                   position: 'absolute',
                   left: 40,
@@ -317,13 +444,14 @@ export default function Fretboard() {
               />
 
               {/* Fret positions */}
-              <div style={{ display: 'flex', position: 'relative', zIndex: 1, flex: 1 }}>
+              <div role="none" style={{ display: 'flex', position: 'relative', zIndex: 1, flex: 1 }}>
                 {frets.map((fret, i) => (
                   <div
                     key={fret}
+                    role="gridcell"
                     style={{
                       flex: fretWidthRatios[i],
-                      minWidth: 28,
+                      minWidth: 'var(--fret-cell-min)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -370,6 +498,7 @@ export default function Fretboard() {
 
         {/* ── Fret dot markers row (below strings) ─────────────────────── */}
         <div
+          aria-hidden="true"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -389,7 +518,7 @@ export default function Fretboard() {
                 key={fret}
                 style={{
                   flex: fretWidthRatios[i],
-                  minWidth: 28,
+                  minWidth: 'var(--fret-cell-min)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',

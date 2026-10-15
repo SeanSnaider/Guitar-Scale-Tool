@@ -182,7 +182,7 @@ const formulaLabelStyle: React.CSSProperties = {
 /** Degree string in monospace, amber-glow. */
 const formulaValueStyle: React.CSSProperties = {
   fontSize: '14px',
-  fontFamily: "'Courier New', Courier, monospace",
+  fontFamily: 'var(--font-mono)',
   color: 'var(--accent-glow)',
   letterSpacing: '0.05em',
 };

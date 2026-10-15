@@ -46,6 +46,7 @@ import SegmentedToggle from '../ui/SegmentedToggle';
 import ProgressBar, { type AnswerStatus } from './ProgressBar';
 import QuestionPrompt from './QuestionPrompt';
 import AnswerGrid, { type AnswerOption } from './AnswerGrid';
+import Fretboard from '../Fretboard';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -310,8 +311,6 @@ export default function EarTrainingView(): React.ReactElement {
     metronome,
     addXP,
     addPracticeMinutes,
-    lastClickedNote,
-    setLastClickedNote,
     toggleLearnedScale,
   } = useGuitarStore();
 
@@ -331,6 +330,30 @@ export default function EarTrainingView(): React.ReactElement {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isAdvancing, setIsAdvancing] = useState(false);
 
+  // Pending timeouts (feedback delay, auto-play, banners). Cleared on unmount
+  // and on mode change, so a late timer can't advance a session the user left.
+  const timersRef = useRef<number[]>([]);
+  const later = useCallback((fn: () => void, ms: number) => {
+    const id = window.setTimeout(() => {
+      timersRef.current = timersRef.current.filter((t) => t !== id);
+      fn();
+    }, ms);
+    timersRef.current.push(id);
+  }, []);
+  const clearTimers = useCallback(() => {
+    timersRef.current.forEach((id) => window.clearTimeout(id));
+    timersRef.current = [];
+  }, []);
+  useEffect(() => clearTimers, [clearTimers]);
+
+  // Screen-reader feedback. `n` changes on every message so a repeated
+  // "Correct." is still announced.
+  const [announcement, setAnnouncement] = useState({ text: '', n: 0 });
+  const announce = useCallback(
+    (text: string) => setAnnouncement((prev) => ({ text, n: prev.n + 1 })),
+    [],
+  );
+
   // Backend session
   const backendSessionRef = useRef<PracticeSession | null>(null);
   const sessionStartTimeRef = useRef<number | null>(null);
@@ -345,6 +368,8 @@ export default function EarTrainingView(): React.ReactElement {
   const sequenceRunsRef = useRef(0);
 
   const scale = SCALES[selectedScale];
+  /** Display name ("Major (Ionian)"), not the registry key ("major"). */
+  const scaleName = scale?.name ?? selectedScale;
   const scaleNotes = useMemo(
     () => (scale ? getScaleNotes(selectedRoot, scale.intervals) : []),
     [selectedRoot, scale],
@@ -406,27 +431,32 @@ export default function EarTrainingView(): React.ReactElement {
         setConsecutiveCorrect(res.mastery.consecutive_correct);
         if (res.just_learned) {
           toggleLearnedScale(scaleKey);
-          setJustLearnedMessage(`${selectedRoot} ${selectedScale} is now LEARNED!`);
+          setJustLearnedMessage(`${selectedRoot} ${scaleName} is now learned!`);
+          announce(`${selectedRoot} ${scaleName} is now learned.`);
           addXP(50);
-          setTimeout(() => setJustLearnedMessage(null), 4000);
+          later(() => setJustLearnedMessage(null), 4000);
         }
       } catch {
         // Backend unreachable — silently continue
       }
     },
-    [scaleKey, selectedRoot, selectedScale, toggleLearnedScale, addXP],
+    [scaleKey, selectedRoot, scaleName, toggleLearnedScale, addXP, announce, later],
   );
 
   // ── Sequence mode: wire fretboard note clicks ──────────────────────────────
 
-  useEffect(() => {
-    if (phase !== 'active' || activeMode !== 'sequence' || !lastClickedNote) return;
+  // A fretboard tap is an event, so it's handled in a store subscription
+  // callback rather than by an effect that sets state when the value changes.
+  const handleSequenceNote = useCallback(
+    (clicked: string) => {
+    if (phase !== 'active' || activeMode !== 'sequence' || scaleNotes.length === 0) return;
 
     const posInScale = sequenceIndex % scaleNotes.length;
     const targetNote = scaleNotes[posInScale];
 
-    if (lastClickedNote === targetNote) {
+    if (clicked === targetNote) {
       const nextIndex = sequenceIndex + 1;
+      announce(`${clicked}, correct. Next: ${scaleNotes[nextIndex % scaleNotes.length]}.`);
       setSequenceIndex(nextIndex);
       setSeqScore((s) => s + 1);
       setSeqTotal((t) => t + 1);
@@ -436,21 +466,25 @@ export default function EarTrainingView(): React.ReactElement {
         void reportScaleAttempt(true, metronome.bpm);
       }
     } else {
+      announce(`${clicked} is not it. Play ${targetNote}.`);
       setSeqTotal((t) => t + 1);
       void reportScaleAttempt(false, metronome.bpm);
     }
+    },
+    [phase, activeMode, scaleNotes, sequenceIndex, reportScaleAttempt, metronome.bpm, announce],
+  );
 
-    setLastClickedNote(null);
-  }, [
-    lastClickedNote,
-    phase,
-    activeMode,
-    scaleNotes,
-    sequenceIndex,
-    setLastClickedNote,
-    reportScaleAttempt,
-    metronome.bpm,
-  ]);
+  useEffect(
+    () =>
+      useGuitarStore.subscribe((state, prev) => {
+        const clicked = state.lastClickedNote;
+        if (!clicked || clicked === prev.lastClickedNote) return;
+        handleSequenceNote(clicked);
+        // Reset so tapping the same note again registers as a new event
+        state.setLastClickedNote(null);
+      }),
+    [handleSequenceNote],
+  );
 
   // ── Question lifecycle ─────────────────────────────────────────────────────
 
@@ -478,15 +512,17 @@ export default function EarTrainingView(): React.ReactElement {
       const updatedAnswers = buildAnswersArray(idx, prevAnswers);
       setEarTrainingAnswers(updatedAnswers);
 
+      announce(`Question ${idx + 1} of ${TOTAL_QUESTIONS}. ${q.questionText}`);
+
       // Auto-play after a short layout delay
-      setTimeout(() => {
+      later(() => {
         setIsPlaying(true);
         q.audioToPlay();
         // Mark as finished playing after a generous window
-        setTimeout(() => setIsPlaying(false), 1200);
+        later(() => setIsPlaying(false), 1200);
       }, 150);
     },
-    [buildAnswersArray, setEarTrainingAnswers],
+    [buildAnswersArray, setEarTrainingAnswers, announce, later],
   );
 
   // ── Session start ──────────────────────────────────────────────────────────
@@ -582,6 +618,11 @@ export default function EarTrainingView(): React.ReactElement {
         : 'incorrect';
       setResult(newResult);
 
+      const correctLabel =
+        currentQuestion.options.find((o) => o.value === currentQuestion.correctAnswer)?.label ??
+        currentQuestion.correctAnswer;
+      announce(isCorrect ? 'Correct.' : `Incorrect. The answer was ${correctLabel}.`);
+
       // Update running score in store
       const newScore = earTrainingScore + (isCorrect ? 1 : 0);
       const newTotal = earTrainingTotal + 1;
@@ -609,9 +650,10 @@ export default function EarTrainingView(): React.ReactElement {
       }
 
       // After feedback delay, advance or end session
-      setTimeout(() => {
+      later(() => {
         const nextIndex = currentQuestionIndex + 1;
         if (nextIndex >= TOTAL_QUESTIONS) {
+          announce(`Session complete. ${newScore} of ${newTotal} correct.`);
           void finishSession(newScore, newTotal);
         } else {
           loadQuestion(
@@ -637,6 +679,8 @@ export default function EarTrainingView(): React.ReactElement {
       reportScaleAttempt,
       finishSession,
       loadQuestion,
+      announce,
+      later,
     ],
   );
 
@@ -650,8 +694,8 @@ export default function EarTrainingView(): React.ReactElement {
     if (!currentQuestion) return;
     setIsPlaying(true);
     currentQuestion.audioToPlay();
-    setTimeout(() => setIsPlaying(false), 1200);
-  }, [currentQuestion]);
+    later(() => setIsPlaying(false), 1200);
+  }, [currentQuestion, later]);
 
   // ── Mode change ────────────────────────────────────────────────────────────
 
@@ -664,13 +708,17 @@ export default function EarTrainingView(): React.ReactElement {
   const handleModeChange = useCallback(
     (value: string) => {
       const newMode = value as EarMode;
+      // Drop pending feedback/auto-play timers from the abandoned session
+      clearTimers();
+      setIsAdvancing(false);
+      setIsPlaying(false);
       setActiveMode(newMode);
       if (newMode !== 'sequence') {
         setEarTrainingMode(newMode as 'intervals' | 'notes' | 'scales');
       }
       setPhase('start');
     },
-    [setEarTrainingMode],
+    [setEarTrainingMode, clearTimers],
   );
 
   // ── Sequence mode start/stop ───────────────────────────────────────────────
@@ -729,7 +777,13 @@ export default function EarTrainingView(): React.ReactElement {
   };
 
   return (
-    <div style={containerStyle}>
+    <>
+    <div className="motion-slide" style={containerStyle}>
+      {/* Polite live region: answer feedback, question changes, session end */}
+      <p className="sr-only" role="status" aria-live="polite">
+        {announcement.text}
+        {announcement.n % 2 ? '\u00A0' : ''}
+      </p>
       <style>{`
         @keyframes ear-fadein {
           from { opacity: 0; transform: translateY(6px); }
@@ -740,6 +794,7 @@ export default function EarTrainingView(): React.ReactElement {
       {/* Mode selector — always visible */}
       <div style={{ display: 'flex', justifyContent: 'center' }}>
         <SegmentedToggle
+          ariaLabel="Exercise type"
           options={modeOptions}
           value={activeMode}
           onChange={handleModeChange}
@@ -812,7 +867,7 @@ export default function EarTrainingView(): React.ReactElement {
               </div>
 
               {/* Live score */}
-              <div
+              <div className="tabular"
                 style={{
                   textAlign: 'center',
                   fontSize: 12,
@@ -836,6 +891,23 @@ export default function EarTrainingView(): React.ReactElement {
         </>
       )}
     </div>
+
+    {/* Sequence mode answers come from fretboard taps, so the board has to be
+        on this tab. Full width, outside the 520 px quiz column. */}
+    {activeMode === 'sequence' && phase === 'active' && (
+      <div
+        style={{
+          background: 'var(--bg-surface)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: 8,
+          padding: 12,
+          marginTop: 4,
+        }}
+      >
+        <Fretboard />
+      </div>
+    )}
+    </>
   );
 }
 
@@ -924,7 +996,7 @@ function StartScreen({ mode, onStart }: StartScreenProps): React.ReactElement {
           marginTop: 8,
           padding: '12px 36px',
           background: 'var(--accent-primary)',
-          color: '#1C1714',
+          color: 'var(--on-accent)',
           border: 'none',
           borderRadius: 8,
           fontSize: 14,
@@ -1016,7 +1088,7 @@ function EndScreen({
         {pct}%
       </p>
 
-      <p
+      <p className="tabular"
         style={{
           fontSize: 14,
           color: 'var(--text-secondary)',
@@ -1043,7 +1115,7 @@ function EndScreen({
           marginTop: 12,
           padding: '12px 36px',
           background: 'var(--accent-primary)',
-          color: '#1C1714',
+          color: 'var(--on-accent)',
           border: 'none',
           borderRadius: 8,
           fontSize: 14,
@@ -1100,7 +1172,7 @@ interface SequenceSectionProps {
  * SequenceSection
  *
  * Renders the Sequence exercise lifted directly from PracticeMode.tsx.
- * The user plays scale notes in order by clicking the fretboard above.
+ * The user plays scale notes in order by selecting them on the fretboard below.
  * Mastery is tracked at 3 consecutive correct runs at ≥ 120 BPM via the
  * backend.
  *
@@ -1156,7 +1228,7 @@ function SequenceSection({
             maxWidth: 320,
           }}
         >
-          Play the scale notes in order by clicking them on the fretboard above.
+          Play the scale notes in order on the fretboard, which appears once you start.
           Achieve 3 correct runs at 120 BPM to mark the scale as learned.
         </p>
         <button
@@ -1166,7 +1238,7 @@ function SequenceSection({
             marginTop: 8,
             padding: '12px 36px',
             background: 'var(--accent-primary)',
-            color: '#1C1714',
+            color: 'var(--on-accent)',
             border: 'none',
             borderRadius: 8,
             fontSize: 14,
@@ -1205,7 +1277,7 @@ function SequenceSection({
         >
           Session Ended
         </p>
-        <p
+        <p className="tabular"
           style={{ fontSize: 14, color: 'var(--text-secondary)', margin: 0 }}
         >
           Score: {score} / {total}
@@ -1216,7 +1288,7 @@ function SequenceSection({
           style={{
             padding: '12px 36px',
             background: 'var(--accent-primary)',
-            color: '#1C1714',
+            color: 'var(--on-accent)',
             border: 'none',
             borderRadius: 8,
             fontSize: 14,
@@ -1253,7 +1325,7 @@ function SequenceSection({
           justifyContent: 'space-between',
         }}
       >
-        <span
+        <span className="tabular"
           style={{ fontSize: 13, color: 'var(--text-muted)' }}
         >
           Score: {score}/{total}
@@ -1280,8 +1352,8 @@ function SequenceSection({
         <div
           style={{
             padding: '10px 14px',
-            background: 'rgba(76, 175, 80, 0.15)',
-            border: '1px solid rgba(76, 175, 80, 0.4)',
+            background: 'var(--correct-soft)',
+            border: '1px solid var(--correct-line)',
             borderRadius: 8,
             color: 'var(--correct)',
             fontSize: 13,
@@ -1354,17 +1426,17 @@ function SequenceSection({
                 i === posInScale
                   ? 'var(--accent-primary)'
                   : i < posInScale
-                  ? 'rgba(76, 175, 80, 0.2)'
+                  ? 'var(--correct-soft)'
                   : 'var(--bg-elevated)',
               color:
                 i === posInScale
-                  ? '#1C1714'
+                  ? 'var(--on-accent)'
                   : i < posInScale
                   ? 'var(--correct)'
                   : 'var(--text-muted)',
               border:
                 i < posInScale
-                  ? '1px solid rgba(76, 175, 80, 0.4)'
+                  ? '1px solid var(--correct-line)'
                   : '1px solid var(--border-subtle)',
             }}
           >
@@ -1392,7 +1464,7 @@ function SequenceSection({
           }}
         >
           <span style={{ color: 'var(--text-muted)' }}>
-            Mastery: {selectedRoot} {selectedScale}
+            Mastery: {selectedRoot} {SCALES[selectedScale]?.name ?? selectedScale}
           </span>
           <span style={{ color: 'var(--text-body)' }}>
             {consecutiveCorrect}/3 at {metronomeBpm} BPM
@@ -1423,7 +1495,7 @@ function SequenceSection({
           <p
             style={{
               fontSize: 11,
-              color: '#EF9F27',
+              color: 'var(--accent-primary)',
               margin: 0,
             }}
           >
@@ -1440,7 +1512,7 @@ function SequenceSection({
           margin: 0,
         }}
       >
-        Click the notes on the fretboard above to play the sequence
+        Play the notes on the fretboard below, in order
       </p>
     </div>
   );

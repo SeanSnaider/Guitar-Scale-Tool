@@ -14,7 +14,7 @@
  *   />
  */
 
-import React from 'react';
+import React, { useId } from 'react';
 
 /** A single selectable option, optionally grouped. */
 export interface DropdownOption {
@@ -73,12 +73,15 @@ export default function Dropdown({
   const chevronUrl =
     "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23A89F90' d='M6 8L1 3h10z'/%3E%3C/svg%3E\")";
 
+  const selectId = useId();
+
   const hasGroups = grouped.size > 1 || (grouped.size === 1 && grouped.keys().next().value !== undefined);
 
   return (
     <div className={className} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       {/* Label */}
-      <span
+      <label
+        htmlFor={selectId}
         style={{
           fontSize: 11,
           color: 'var(--text-secondary)',
@@ -89,10 +92,11 @@ export default function Dropdown({
         }}
       >
         {label}
-      </span>
+      </label>
 
       {/* Select */}
       <select
+        id={selectId}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         style={{
@@ -109,16 +113,8 @@ export default function Dropdown({
           backgroundImage: chevronUrl,
           backgroundRepeat: 'no-repeat',
           backgroundPosition: 'right 10px center',
-          outline: 'none',
           width: '100%',
           minWidth: 120,
-        }}
-        onFocus={(e) => {
-          e.currentTarget.style.outline = '2px solid var(--accent-primary)';
-          e.currentTarget.style.outlineOffset = '1px';
-        }}
-        onBlur={(e) => {
-          e.currentTarget.style.outline = 'none';
         }}
       >
         {hasGroups

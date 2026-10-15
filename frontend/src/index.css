@@ -18,7 +18,7 @@
   /* ---- Text ---- */
   --text-body: #E8DFD0;
   --text-secondary: #A89F90;
-  --text-muted: #888780;
+  --text-muted: #9A958C;   /* ≥4.5:1 on every surface incl. the fretboard */
 
   /* ---- Accent / amber ---- */
   --accent-primary: #EF9F27;
@@ -35,15 +35,67 @@
   --border-subtle: rgba(239, 159, 39, 0.15);
   --border-input: rgba(239, 159, 39, 0.30);
 
+  /* ---- Text on amber fills (buttons, root notes, active pills) ---- */
+  --on-accent: #1C1714;
+
+  /* ---- Recessed surface (audio shelf panel) ---- */
+  --bg-sunken: #1A1512;
+
   /* ---- Semantic ---- */
   --correct: #4CAF50;
   --incorrect: #EF4444;
   --info: #60A5FA;
 
+  /* Tints of the semantic hues: -soft for fills, -line for borders,
+     -strong for emphasised borders on answered states. */
+  --correct-soft: color-mix(in srgb, var(--correct) 15%, transparent);
+  --correct-line: color-mix(in srgb, var(--correct) 38%, transparent);
+  --correct-strong: color-mix(in srgb, var(--correct) 60%, transparent);
+  --incorrect-soft: color-mix(in srgb, var(--incorrect) 12%, transparent);
+  --incorrect-line: color-mix(in srgb, var(--incorrect) 32%, transparent);
+  --incorrect-strong: color-mix(in srgb, var(--incorrect) 60%, transparent);
+  --accent-soft: color-mix(in srgb, var(--accent-primary) 15%, transparent);
+  --accent-line: color-mix(in srgb, var(--accent-primary) 32%, transparent);
+
+  /* ---- Fretboard notes ---- */
+  --note-root-bg: var(--accent-primary);
+  --note-root-fg: var(--on-accent);
+  --note-scale-bg: #854F0B;
+  --note-scale-fg: var(--accent-glow);
+  /* Lighter amber ring so scale notes clear 3:1 against the wood in Dots mode */
+  --note-scale-ring: #B8741A;
+  --note-muted-bg: var(--bg-elevated);
+  --note-muted-fg: var(--text-muted);
+  --note-muted-border: var(--fret-wire);
+  --chord-nut: #C8B89A;
+
   /* ---- Fonts ---- */
   --font-display: Georgia, 'Times New Roman', serif;
-  --font-body: 'Inter', 'Segoe UI', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --font-body: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* ---- Layout metrics ---- */
+  --nav-h: 52px;
+  --nav-row-h: 44px;            /* second nav row on phones */
+  --shelf-bar-h: 48px;          /* fixed "Controls" trigger bar */
+  --gutter: 16px;
+  --gutter-x-left: max(var(--gutter), env(safe-area-inset-left));
+  --gutter-x-right: max(var(--gutter), env(safe-area-inset-right));
+
+  /* ---- Fretboard density (fine pointer) ---- */
+  --fret-row-h: 36px;
+  --fret-cell-min: 28px;
+  --note-hit-pad: 0px;
+}
+
+/* Touch screens get roomier fretboard cells and expanded note hit areas,
+   while the drawn note circles keep their size. */
+@media (pointer: coarse) {
+  :root {
+    --fret-row-h: 44px;
+    --fret-cell-min: 40px;
+    --note-hit-pad: 8px;
+  }
 }
 
 /* ========================================
@@ -64,6 +116,20 @@
     @apply antialiased;
   }
 
+  /* Numbers that update in place (BPM, scores, fret numbers, percentages)
+     keep a fixed width so neighbouring text doesn't jitter. */
+  .tabular { font-variant-numeric: tabular-nums; }
+
+  /* Touch: iOS Safari zooms the page when a text field under 16px gets
+     focus. !important is needed to beat the components' inline font sizes. */
+  @media (pointer: coarse) {
+    input:not([type='range']):not([type='checkbox']):not([type='radio']),
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
+
   :focus-visible {
     outline: 2px solid var(--accent-primary);
     outline-offset: 2px;
@@ -72,6 +138,203 @@
   :focus:not(:focus-visible) {
     outline: none;
   }
+
+  /* Touch: every control is at least a 44px target unless it opts out with
+     data-dense and supplies its own hit area (fretboard and tab notes).
+     :where() keeps specificity at zero so component rules still win. */
+  @media (pointer: coarse) {
+    :where(button, select, [role='tab'], input[type='range']):not([data-dense]) {
+      min-height: 44px;
+    }
+    :where(button):not([data-dense]) {
+      min-width: 44px;
+    }
+  }
+}
+
+/* ========================================
+   APP CHROME
+   Navigation bar and the space reserved for
+   the fixed audio-controls bar.
+   ======================================== */
+
+.app-nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background-color: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* Short landscape phones: the nav scrolls away so the fretboard keeps the height. */
+@media (max-height: 480px) {
+  .app-nav { position: relative; }
+}
+
+.app-nav__bar {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 0 var(--gutter-x-right) 0 var(--gutter-x-left);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas: 'brand tabs';
+  align-items: center;
+  column-gap: 8px;
+  min-height: var(--nav-h);
+}
+
+.app-nav__brand { grid-area: brand; margin-right: 8px; }
+
+.app-nav__tabs {
+  grid-area: tabs;
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.nav-tab {
+  height: var(--nav-h);
+  padding: 0 8px;
+  font-size: 13px;
+  font-family: var(--font-body);
+  background: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+
+@media (min-width: 1024px) {
+  .nav-tab { padding: 0 12px; }
+}
+
+/* One tab list per breakpoint. Plain CSS rather than Tailwind's hidden/md:flex,
+   because these unlayered rules would otherwise outrank the utilities. */
+.app-nav__tabs--narrow { display: none; }
+
+@media (max-width: 767px) {
+  .app-nav__tabs--wide { display: none; }
+  .app-nav__tabs--narrow { display: flex; }
+}
+
+/* Phones: brand + tools on top, a full-width tab row underneath. */
+@media (max-width: 767px) {
+  .app-nav__bar {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      'brand'
+      'tabs';
+  }
+
+  .app-nav__tabs {
+    margin: 0 calc(-1 * var(--gutter-x-right)) 0 calc(-1 * var(--gutter-x-left));
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .nav-tab {
+    height: var(--nav-row-h);
+    flex: 1 0 auto;
+    padding: 0 6px;
+  }
+}
+
+/* Primary tabs scroll only on the narrowest screens; "More" stays pinned
+   outside the scroller so its menu is never clipped. */
+.app-nav__scroller {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.app-nav__scroller::-webkit-scrollbar { display: none; }
+
+.app-nav__more { position: relative; flex-shrink: 0; display: flex; }
+.app-nav__more .nav-tab { flex: 0 0 auto; padding: 0 12px; }
+
+/* Smallest phones (320 px class): tighter tabs so all four plus More fit unscrolled. */
+@media (max-width: 359px) {
+  .nav-tab { font-size: 12px; padding: 0 4px; }
+  .app-nav__more .nav-tab { padding: 0 8px; }
+}
+
+.app-nav__menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  min-width: 180px;
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  overflow: hidden;
+  animation: fade-in 150ms ease;
+}
+
+.app-nav__menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 16px;
+  text-align: left;
+  font-size: 14px;
+  font-family: var(--font-body);
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color 150ms ease, background-color 150ms ease;
+}
+
+.app-nav__menu-item:hover { color: var(--accent-primary); }
+
+.app-nav__menu-item[aria-current='page'] {
+  color: var(--accent-primary);
+  font-weight: 500;
+  background-color: var(--border-subtle);
+}
+
+/* Tab content clears the fixed Controls bar and the home indicator. */
+.app-content {
+  flex: 1;
+  padding-bottom: calc(var(--shelf-bar-h) + env(safe-area-inset-bottom));
+}
+
+/* Skip link: hidden until a keyboard user tabs to it. */
+.skip-link {
+  position: absolute;
+  left: var(--gutter-x-left);
+  top: 8px;
+  z-index: 200;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background-color: var(--accent-primary);
+  color: var(--bg-primary);
+  font-size: 14px;
+  font-weight: 600;
+  transform: translateY(calc(-100% - 16px));
+}
+
+.skip-link:focus-visible { transform: none; }
+
+/* Programmatic focus targets (tab content, dialogs) don't need a ring. */
+main[tabindex='-1']:focus,
+[role='dialog'][tabindex='-1']:focus { outline: none; }
+
+/* Fretboard notes: the amber box-shadow already means "highlighted interval",
+   so keyboard focus uses the pale glow colour to stay distinguishable. */
+.note-hit:focus-visible { outline-color: var(--accent-glow); }
+
+/* Expands a small fretboard note's tap area without changing its drawn size. */
+.note-hit { position: relative; }
+
+.note-hit::before {
+  content: '';
+  position: absolute;
+  inset: calc(-1 * var(--note-hit-pad));
+  border-radius: 50%;
 }
 
 /* ========================================
@@ -107,21 +370,53 @@
 /** Flashes the background green to signal a correct answer, then reverts */
 @keyframes answer-correct {
   0%   { background-color: transparent; }
-  40%  { background-color: #4CAF50; }
+  40%  { background-color: var(--correct); }
   100% { background-color: transparent; }
 }
 
 /** Flashes the background red to signal an incorrect answer, then reverts */
 @keyframes answer-incorrect {
   0%   { background-color: transparent; }
-  40%  { background-color: #EF4444; }
+  40%  { background-color: var(--incorrect); }
   100% { background-color: transparent; }
+}
+
+/** Loading spinner rotation (ChordAI "Generating..." indicator) */
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 /** Slides the audio shelf panel up from below the viewport */
 @keyframes shelf-slide-up {
   from { transform: translateY(100%); }
   to   { transform: translateY(0); }
+}
+
+/* ========================================
+   REDUCED MOTION
+   Spatial movement goes; fades and colour changes that confirm an action
+   stay. Inline animation styles need !important to be overridden.
+   ======================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+
+  /* Entrances that slide (audio shelf, ear-training card) become plain fades */
+  .motion-slide { animation-name: fade-in !important; }
+
+  /* Decorative loops (playing waveform, pending-question pulse) hold still;
+     the playing/pending state is still shown by colour and the labels. */
+  .motion-loop { animation: none !important; }
+
+  /* The loading spinner keeps turning (it is the only "working" cue) but slower */
+  .motion-spin { animation-duration: 2s !important; }
+
+  /* No hover/select growth or click pulse on notes and chord chips */
+  .motion-scale,
+  .note-hit {
+    transform: none !important;
+    animation: none !important;
+  }
 }
 
 /* ========================================
@@ -159,82 +454,4 @@
 
 .tab-inactive:hover {
   color: var(--accent-primary);
-}
-
-/**
- * Root note circle: 24 px amber circle with dark text.
- * Used on the fretboard to mark the root note of a scale.
- */
-.note-circle-root {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background-color: #EF9F27;
-  color: #1C1714;
-  font-weight: bold;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  line-height: 1;
-}
-
-/**
- * Scale note circle: 22 px dark-amber circle with warm text.
- * Used for non-root scale tones on the fretboard.
- */
-.note-circle-scale {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background-color: #854F0B;
-  color: #FAEEDA;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  line-height: 1;
-}
-
-/**
- * Muted note circle: 22 px dark circle with a subtle fret-wire border.
- * Used for chromatic tones that fall outside the current scale.
- */
-.note-circle-muted {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background-color: #2A2320;
-  color: #888780;
-  border: 1px solid #444441;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  line-height: 1;
-}
-
-/**
- * Primary amber action button.
- * Use for the main call-to-action in any panel (e.g., "Play Scale").
- */
-.btn-amber {
-  background-color: var(--accent-primary);
-  color: #1C1714;
-  border-radius: 6px;
-  padding: 6px 12px;
-  font-weight: 500;
-  font-size: 13px;
-  border: none;
-  cursor: pointer;
-  transition: background-color 150ms ease;
-}
-
-.btn-amber:hover {
-  background-color: var(--accent-hover);
-}
-
-.btn-amber:focus-visible {
-  outline: 2px solid var(--accent-primary);
-  outline-offset: 2px;
 }

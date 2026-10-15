@@ -4,18 +4,20 @@
  * Sticky top navigation bar for the Guitar Scale Tool application.
  *
  * Renders:
- *  - A logo mark (SVG guitar-string icon) + "Scale Teacher" wordmark on the left.
+ *  - A logo mark (SVG fretboard slice) + "Scale Teacher" wordmark on the left.
  *  - 7 navigation tabs that update the global `activeTab` store value.
- *  - On desktop (≥768 px): all 7 tabs are visible inline.
- *  - On mobile (<768 px): the first 4 tabs are visible; the remaining 3 collapse
- *    into a "More ▾" dropdown menu.
- *  - A small ⚙ button on the right that opens the audio controls shelf.
+ *  - On desktop (≥768 px): all 7 tabs are visible inline in a single 52 px row.
+ *  - On mobile (<768 px): the logo sits on top, with a full-width row
+ *    below holding the first 4 tabs and a "More ▾" menu for the other 3.
+ *    Layout lives in the `.app-nav*` rules in index.css.
+ *  - Audio controls open from the "Controls" bar at the bottom of the screen
+ *    (AudioControlsShelf); the nav has no separate settings button.
  *
  * Uses CSS custom properties from the Studio Walnut design system for all colours.
  * Tab transitions are 150 ms ease to feel snappy without being jarring.
  */
 
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useGuitarStore } from '../../store/useGuitarStore';
 
 // ---- Types ----
@@ -57,30 +59,36 @@ const MOBILE_OVERFLOW_TABS = ALL_TABS.slice(4);
 // ---- Sub-components ----
 
 /**
- * GuitarStringIcon
+ * FretMark
  *
- * A minimal SVG representing three guitar strings of varying thickness,
- * used as the app logo mark.
+ * Logo mark: a short slice of fretboard seen face-on. Two fret wires cross
+ * three strings, with one amber inlay dot between them. The vertical frets
+ * keep it from reading as a three-line menu icon.
  *
  * @param className - Optional extra CSS classes for sizing.
  */
-function GuitarStringIcon({ className = '' }: { className?: string }) {
+function FretMark({ className = '' }: { className?: string }) {
   return (
     <svg
-      viewBox="0 0 24 20"
+      viewBox="0 0 24 24"
       width="24"
-      height="20"
+      height="24"
       aria-hidden="true"
       className={className}
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
     >
-      {/* High string — thinnest (1 px) */}
-      <line x1="0" y1="4" x2="24" y2="4" stroke="#EF9F27" strokeWidth="1" />
-      {/* Mid string — medium (1.5 px) */}
-      <line x1="0" y1="10" x2="24" y2="10" stroke="#EF9F27" strokeWidth="1.5" />
-      {/* Low string — thickest (2.5 px) */}
-      <line x1="0" y1="16" x2="24" y2="16" stroke="#EF9F27" strokeWidth="2.5" />
+      {/* Fretboard slice */}
+      <rect x="1" y="3" width="22" height="18" rx="3" fill="var(--fretboard-bg)" />
+      {/* Fret wires */}
+      <line x1="6.5" y1="3" x2="6.5" y2="21" stroke="var(--nut-color)" strokeWidth="1.5" />
+      <line x1="17.5" y1="3" x2="17.5" y2="21" stroke="var(--nut-color)" strokeWidth="1.5" />
+      {/* Strings, thicker toward the bass side */}
+      <line x1="1" y1="7.5" x2="23" y2="7.5" stroke="var(--string-color)" strokeWidth="0.75" />
+      <line x1="1" y1="12" x2="23" y2="12" stroke="var(--string-color)" strokeWidth="1" />
+      <line x1="1" y1="16.5" x2="23" y2="16.5" stroke="var(--string-color)" strokeWidth="1.4" />
+      {/* Inlay dot */}
+      <circle cx="12" cy="12" r="3.4" fill="var(--accent-primary)" />
     </svg>
   );
 }
@@ -99,28 +107,40 @@ function GuitarStringIcon({ className = '' }: { className?: string }) {
 function NavBar() {
   const activeTab = useGuitarStore((s) => s.activeTab);
   const setActiveTab = useGuitarStore((s) => s.setActiveTab);
-  const setIsAudioShelfOpen = useGuitarStore((s) => s.setIsAudioShelfOpen);
 
   /** Controls visibility of the "More" overflow dropdown on mobile. */
   const [isMoreOpen, setIsMoreOpen] = useState(false);
 
   /** Ref used to detect clicks outside the dropdown so it can be closed. */
   const moreRef = useRef<HTMLDivElement>(null);
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  // Close the dropdown when the user clicks outside it
+  /** Item to focus when the menu opens: 'first' / 'last' for keyboard opens, null for pointer opens. */
+  const [initialMenuFocus, setInitialMenuFocus] = useState<'first' | 'last' | null>(null);
+
+  // Close the dropdown on an outside press (mouse or touch) or on Escape
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
+    if (!isMoreOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
       if (moreRef.current && !moreRef.current.contains(event.target as Node)) {
         setIsMoreOpen(false);
       }
     };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsMoreOpen(false);
+        moreButtonRef.current?.focus();
+      }
+    };
 
-    if (isMoreOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
 
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
     };
   }, [isMoreOpen]);
 
@@ -135,42 +155,59 @@ function NavBar() {
     setIsMoreOpen(false);
   };
 
+  // Move focus into the menu when it was opened from the keyboard
+  useEffect(() => {
+    if (!isMoreOpen || !initialMenuFocus) return;
+    const items = menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]');
+    if (!items?.length) return;
+    (initialMenuFocus === 'first' ? items[0] : items[items.length - 1]).focus();
+  }, [isMoreOpen, initialMenuFocus]);
+
+  /** Opens the menu from the keyboard (Enter/Space/ArrowDown → first item, ArrowUp → last). */
+  const handleMoreKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(event.key)) {
+      event.preventDefault();
+      setInitialMenuFocus(event.key === 'ArrowUp' ? 'last' : 'first');
+      setIsMoreOpen(true);
+    }
+  };
+
+  /** Roving focus inside the open menu, per the WAI-ARIA menu button pattern. */
+  const handleMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const items = Array.from(
+      menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [],
+    );
+    const index = items.indexOf(document.activeElement as HTMLButtonElement);
+    let next: number | null = null;
+    if (event.key === 'ArrowDown') next = (index + 1) % items.length;
+    else if (event.key === 'ArrowUp') next = (index - 1 + items.length) % items.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = items.length - 1;
+    else if (event.key === 'Tab') setIsMoreOpen(false);
+
+    if (next !== null) {
+      event.preventDefault();
+      items[next].focus();
+    }
+  };
+
   /** Whether any overflow tab is currently active (used to style the "More" button). */
   const isOverflowTabActive = MOBILE_OVERFLOW_TABS.some((t) => t.id === activeTab);
 
   return (
-    <nav
-      style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 50,
-        backgroundColor: 'var(--bg-surface)',
-        borderBottom: '1px solid var(--border-subtle)',
-      }}
-      aria-label="Main navigation"
-    >
-      <div
-        style={{
-          maxWidth: '1600px',
-          margin: '0 auto',
-          padding: '0 16px',
-          display: 'flex',
-          alignItems: 'center',
-          height: '52px',
-          gap: '8px',
-        }}
-      >
+    <nav className="app-nav" aria-label="Main navigation">
+      <div className="app-nav__bar">
         {/* ---- Logo ---- */}
         <div
+          className="app-nav__brand"
           style={{
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            flexShrink: 0,
-            marginRight: '16px',
+            minHeight: 'var(--nav-h)',
           }}
         >
-          <GuitarStringIcon />
+          <FretMark />
           <span
             style={{
               fontFamily: 'var(--font-display)',
@@ -179,18 +216,17 @@ function NavBar() {
               fontWeight: 'normal',
               letterSpacing: '0.01em',
               lineHeight: 1,
+              whiteSpace: 'nowrap',
             }}
           >
             Scale Teacher
           </span>
         </div>
 
-        {/* ---- Desktop tabs (≥768 px) ---- */}
+        {/* ---- Wide screens (>=768 px): every tab inline ---- */}
         <div
-          className="hidden md:flex"
-          style={{ flex: 1, alignItems: 'center', gap: '2px' }}
-          role="tablist"
-          aria-label="Navigation tabs"
+          className="app-nav__tabs app-nav__tabs--wide"
+          style={{ gap: '2px' }}
         >
           {ALL_TABS.map((tab) => (
             <TabButton
@@ -202,104 +238,63 @@ function NavBar() {
           ))}
         </div>
 
-        {/* ---- Mobile primary tabs (<768 px) ---- */}
-        <div
-          className="flex md:hidden"
-          style={{ flex: 1, alignItems: 'center', gap: '2px', overflowX: 'auto' }}
-          role="tablist"
-          aria-label="Navigation tabs"
-        >
-          {MOBILE_PRIMARY_TABS.map((tab) => (
-            <TabButton
-              key={tab.id}
-              tab={tab}
-              isActive={activeTab === tab.id}
-              onSelect={handleTabSelect}
-            />
-          ))}
+        {/* ---- Phones (<768 px): full-width row of primary tabs + pinned "More" ---- */}
+        <div className="app-nav__tabs app-nav__tabs--narrow">
+          <div className="app-nav__scroller">
+            {MOBILE_PRIMARY_TABS.map((tab) => (
+              <TabButton
+                key={tab.id}
+                tab={tab}
+                isActive={activeTab === tab.id}
+                onSelect={handleTabSelect}
+              />
+            ))}
+          </div>
 
-          {/* "More ▾" overflow button */}
-          <div ref={moreRef} style={{ position: 'relative', flexShrink: 0 }}>
+          {/* "More" lives outside the scroller so its menu can overflow the nav */}
+          <div ref={moreRef} className="app-nav__more">
             <button
-              onClick={() => setIsMoreOpen((prev) => !prev)}
-              aria-haspopup="true"
-              aria-expanded={isMoreOpen}
-              style={{
-                padding: '6px 10px',
-                fontSize: '13px',
-                fontFamily: 'var(--font-body)',
-                fontWeight: isOverflowTabActive ? 500 : 400,
-                color: isOverflowTabActive
-                  ? 'var(--accent-primary)'
-                  : 'var(--text-secondary)',
-                background: 'none',
-                border: 'none',
-                borderBottom: isOverflowTabActive
-                  ? '2px solid var(--accent-primary)'
-                  : '2px solid transparent',
-                cursor: 'pointer',
-                transition: 'color 150ms ease',
-                whiteSpace: 'nowrap',
-                height: '52px',
-                display: 'flex',
-                alignItems: 'center',
+              ref={moreButtonRef}
+              type="button"
+              id="nav-more-button"
+              className={`nav-tab ${isOverflowTabActive ? 'tab-active' : 'tab-inactive'}`}
+              onClick={() => {
+                setInitialMenuFocus(null);
+                setIsMoreOpen((prev) => !prev);
               }}
+              onKeyDown={handleMoreKeyDown}
+              aria-haspopup="menu"
+              aria-expanded={isMoreOpen}
+              aria-controls={isMoreOpen ? 'nav-more-menu' : undefined}
+              aria-label={
+                isOverflowTabActive
+                  ? `More: ${MOBILE_OVERFLOW_TABS.find((t) => t.id === activeTab)?.label}`
+                  : 'More'
+              }
             >
-              More ▾
+              More <span aria-hidden="true">▾</span>
             </button>
 
-            {/* Dropdown panel */}
             {isMoreOpen && (
               <div
-                style={{
-                  position: 'absolute',
-                  top: '100%',
-                  right: 0,
-                  minWidth: '140px',
-                  backgroundColor: 'var(--bg-elevated)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: '6px',
-                  boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-                  zIndex: 100,
-                  overflow: 'hidden',
-                  animation: 'fade-in 150ms ease',
-                }}
+                ref={menuRef}
+                id="nav-more-menu"
+                className="app-nav__menu"
                 role="menu"
+                aria-labelledby="nav-more-button"
+                onKeyDown={handleMenuKeyDown}
               >
                 {MOBILE_OVERFLOW_TABS.map((tab) => (
                   <button
                     key={tab.id}
+                    type="button"
                     role="menuitem"
-                    onClick={() => handleTabSelect(tab.id)}
-                    style={{
-                      display: 'block',
-                      width: '100%',
-                      textAlign: 'left',
-                      padding: '10px 16px',
-                      fontSize: '13px',
-                      fontFamily: 'var(--font-body)',
-                      fontWeight: activeTab === tab.id ? 500 : 400,
-                      color:
-                        activeTab === tab.id
-                          ? 'var(--accent-primary)'
-                          : 'var(--text-secondary)',
-                      background:
-                        activeTab === tab.id ? 'var(--border-subtle)' : 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      transition: 'color 150ms ease, background 150ms ease',
-                    }}
-                    onMouseEnter={(e) => {
-                      if (activeTab !== tab.id) {
-                        (e.currentTarget as HTMLButtonElement).style.color =
-                          'var(--accent-primary)';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (activeTab !== tab.id) {
-                        (e.currentTarget as HTMLButtonElement).style.color =
-                          'var(--text-secondary)';
-                      }
+                    tabIndex={-1}
+                    className="app-nav__menu-item"
+                    aria-current={activeTab === tab.id ? 'page' : undefined}
+                    onClick={() => {
+                      handleTabSelect(tab.id);
+                      moreButtonRef.current?.focus();
                     }}
                   >
                     {tab.label}
@@ -310,40 +305,6 @@ function NavBar() {
           </div>
         </div>
 
-        {/* ---- Audio shelf toggle ---- */}
-        <button
-          onClick={() => setIsAudioShelfOpen(true)}
-          title="Open audio controls"
-          aria-label="Open audio controls"
-          style={{
-            flexShrink: 0,
-            marginLeft: '8px',
-            width: '32px',
-            height: '32px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'var(--bg-elevated)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: '6px',
-            color: 'var(--text-secondary)',
-            fontSize: '16px',
-            cursor: 'pointer',
-            transition: 'color 150ms ease, border-color 150ms ease',
-          }}
-          onMouseEnter={(e) => {
-            const btn = e.currentTarget as HTMLButtonElement;
-            btn.style.color = 'var(--accent-primary)';
-            btn.style.borderColor = 'var(--border-input)';
-          }}
-          onMouseLeave={(e) => {
-            const btn = e.currentTarget as HTMLButtonElement;
-            btn.style.color = 'var(--text-secondary)';
-            btn.style.borderColor = 'var(--border-subtle)';
-          }}
-        >
-          ⚙
-        </button>
       </div>
     </nav>
   );
@@ -360,9 +321,12 @@ interface TabButtonProps {
 /**
  * TabButton
  *
- * An individual navigation tab button.  Applies the `.tab-active` or
- * `.tab-inactive` utility class from the design system plus an inline
- * height so the bottom border aligns flush with the nav bar bottom edge.
+ * An individual navigation button.  These switch whole views rather than
+ * in-page panels, so they are plain buttons marked with `aria-current="page"`
+ * instead of ARIA tabs (which would promise arrow-key behaviour and tabpanels).
+ * `.nav-tab` sets the height (52 px in the single-row bar, 44 px in the phone
+ * tab row) so the bottom border sits flush with the nav edge;
+ * `.tab-active` / `.tab-inactive` set the colours.
  *
  * @param tab      - The tab metadata (id + label).
  * @param isActive - Whether this tab is the currently selected one.
@@ -371,21 +335,10 @@ interface TabButtonProps {
 function TabButton({ tab, isActive, onSelect }: TabButtonProps) {
   return (
     <button
-      role="tab"
-      aria-selected={isActive}
+      type="button"
+      aria-current={isActive ? 'page' : undefined}
       onClick={() => onSelect(tab.id)}
-      className={isActive ? 'tab-active' : 'tab-inactive'}
-      style={{
-        padding: '0 12px',
-        height: '52px',
-        fontSize: '13px',
-        fontFamily: 'var(--font-body)',
-        background: 'none',
-        cursor: 'pointer',
-        whiteSpace: 'nowrap',
-        transition: 'color 150ms ease, border-color 150ms ease',
-        letterSpacing: 'normal',
-      }}
+      className={`nav-tab ${isActive ? 'tab-active' : 'tab-inactive'}`}
     >
       {tab.label}
     </button>

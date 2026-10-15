@@ -222,7 +222,7 @@ export default function ChordDiagrams() {
                 cursor: 'pointer',
                 transition: 'background 0.15s ease, color 0.15s ease',
                 background: viewMode === mode ? 'var(--accent-primary)' : 'transparent',
-                color: viewMode === mode ? '#1C1714' : 'var(--text-muted)',
+                color: viewMode === mode ? 'var(--on-accent)' : 'var(--text-muted)',
                 fontWeight: viewMode === mode ? 600 : 400,
               }}
             >
@@ -375,7 +375,7 @@ function ChordBoxesView({ chords, onPlayChord }: ChordViewProps) {
                   y={0}
                   width={diagramWidth}
                   height={3}
-                  fill="#C8B89A"
+                  fill="var(--chord-nut)"
                   rx={1}
                 />
               )}
@@ -470,7 +470,7 @@ function ChordTabView({ chords, onPlayChord }: ChordViewProps) {
         background: 'var(--bg-primary)',
         borderRadius: '8px',
         padding: '12px',
-        fontFamily: 'monospace',
+        fontFamily: 'var(--font-mono)',
         fontSize: '13px',
         border: '1px solid var(--border-subtle)',
       }}

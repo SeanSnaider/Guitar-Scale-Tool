@@ -20,7 +20,7 @@
  * @module layout/AppShell
  */
 
-import React, { Suspense } from 'react';
+import React, { Suspense, useEffect } from 'react';
 import { useGuitarStore } from '../../store/useGuitarStore';
 import NavBar from './NavBar';
 
@@ -79,11 +79,25 @@ function TabLoadingFallback() {
 
 // ---- Layout helpers ----
 
+/** Human-readable view names, used for document.title. */
+const TAB_TITLES: Record<string, string> = {
+  fretboard: 'Fretboard',
+  scales: 'Scales',
+  chords: 'Chords',
+  'ear-training': 'Ear Training',
+  reference: 'Reference',
+  progress: 'Progress',
+  chordai: 'ChordAI',
+};
+
 /** Common max-width wrapper applied to every tab's content area. */
 const CONTENT_STYLE: React.CSSProperties = {
   maxWidth: '1600px',
   margin: '0 auto',
-  padding: '16px',
+  paddingTop: 'var(--gutter)',
+  paddingBottom: 'var(--gutter)',
+  paddingLeft: 'var(--gutter-x-left)',
+  paddingRight: 'var(--gutter-x-right)',
 };
 
 /**
@@ -99,7 +113,8 @@ const CONTENT_STYLE: React.CSSProperties = {
  */
 function FretboardTabContent() {
   return (
-    <div style={CONTENT_STYLE}>
+    <main id="main-content" tabIndex={-1} style={CONTENT_STYLE}>
+      <h1 className="sr-only">Fretboard</h1>
       {/* Full-width controls bar */}
       <FretboardControls />
 
@@ -144,7 +159,7 @@ function FretboardTabContent() {
 
       {/* Full-width footer info */}
       <FooterInfoBar />
-    </div>
+    </main>
   );
 }
 
@@ -157,7 +172,8 @@ function FretboardTabContent() {
  */
 function ScalesTabContent() {
   return (
-    <main style={CONTENT_STYLE}>
+    <main id="main-content" tabIndex={-1} style={CONTENT_STYLE}>
+      <h1 className="sr-only">Scales</h1>
       <ScalesBrowser />
     </main>
   );
@@ -172,7 +188,8 @@ function ScalesTabContent() {
  */
 function ChordsTabContent() {
   return (
-    <main style={CONTENT_STYLE}>
+    <main id="main-content" tabIndex={-1} style={CONTENT_STYLE}>
+      <h1 className="sr-only">Chords</h1>
       <ChordDiagrams />
     </main>
   );
@@ -187,7 +204,8 @@ function ChordsTabContent() {
  */
 function EarTrainingTabContent() {
   return (
-    <main style={CONTENT_STYLE}>
+    <main id="main-content" tabIndex={-1} style={CONTENT_STYLE}>
+      <h1 className="sr-only">Ear Training</h1>
       <EarTrainingView />
     </main>
   );
@@ -204,7 +222,8 @@ function EarTrainingTabContent() {
  */
 function ReferenceTabContent() {
   return (
-    <main style={CONTENT_STYLE}>
+    <main id="main-content" tabIndex={-1} style={CONTENT_STYLE}>
+      <h1 className="sr-only">Reference</h1>
       <ReferencePanel />
     </main>
   );
@@ -219,7 +238,8 @@ function ReferenceTabContent() {
  */
 function ProgressTabContent() {
   return (
-    <main style={CONTENT_STYLE}>
+    <main id="main-content" tabIndex={-1} style={CONTENT_STYLE}>
+      <h1 className="sr-only">Progress</h1>
       <Suspense fallback={<TabLoadingFallback />}>
         <ProgressDashboard />
       </Suspense>
@@ -236,7 +256,8 @@ function ProgressTabContent() {
  */
 function ChordAITabContent() {
   return (
-    <main style={CONTENT_STYLE}>
+    <main id="main-content" tabIndex={-1} style={CONTENT_STYLE}>
+      <h1 className="sr-only">ChordAI</h1>
       <Suspense fallback={<TabLoadingFallback />}>
         <ChordAI />
       </Suspense>
@@ -257,6 +278,12 @@ function ChordAITabContent() {
  */
 function AppShell() {
   const activeTab = useGuitarStore((s) => s.activeTab);
+  const isAudioShelfOpen = useGuitarStore((s) => s.isAudioShelfOpen);
+
+  // Name the current view in the browser tab and for assistive tech
+  useEffect(() => {
+    document.title = `${TAB_TITLES[activeTab] ?? 'Scale Teacher'} · Scale Teacher`;
+  }, [activeTab]);
 
   return (
     <div
@@ -268,11 +295,21 @@ function AppShell() {
         flexDirection: 'column',
       }}
     >
-      {/* Sticky navigation */}
-      <NavBar />
+      <a className="skip-link" href="#main-content">
+        Skip to content
+      </a>
 
-      {/* Tab content area */}
-      <div style={{ flex: 1 }}>
+      {/*
+        While the audio shelf is open it behaves as a modal: everything behind
+        it is inert, so Tab and screen readers stay inside the shelf.
+      */}
+      <div inert={isAudioShelfOpen} style={{ display: 'contents' }}>
+        {/* Sticky navigation */}
+        <NavBar />
+      </div>
+
+      {/* Tab content area; .app-content reserves room for the fixed Controls bar */}
+      <div className="app-content" inert={isAudioShelfOpen}>
         {activeTab === 'fretboard' && <FretboardTabContent />}
         {activeTab === 'scales' && <ScalesTabContent />}
         {activeTab === 'chords' && <ChordsTabContent />}

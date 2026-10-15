@@ -4,9 +4,9 @@
  * A horizontal info + playback bar rendered below the fretboard / tablature area.
  *
  * Left side:
- *   A play/stop button that sequences through the current scale notes by
- *   calling `audioEngine.playNote(note, 4)` with 250 ms between notes via
- *   `setTimeout`.  While playing, the button shows "Stop" and a square icon.
+ *   A play/stop button for the scale. It toggles the shared `isPlayingScale`
+ *   flag, so it drives the same BPM-synced player as the Tablature's Play
+ *   button (Tablature owns the audio scheduling and the playhead).
  *
  * Right side:
  *   Scale name in Georgia serif 16 px amber, followed by the scale notes
@@ -16,77 +16,26 @@
  * selected root + scale using `getScaleNotes` and `SCALES` from musicTheory.
  */
 
-import React, { useCallback, useRef } from 'react';
+import React from 'react';
 import { useGuitarStore } from '../store/useGuitarStore';
-import { audioEngine } from '../audio/AudioEngine';
 import { getScaleNotes, SCALES } from '../data/musicTheory';
-
-/** Delay between consecutive notes during scale playback (ms). */
-const NOTE_INTERVAL_MS = 250;
 
 /**
  * FooterInfoBar
  *
- * Renders a compact bar below the fretboard with scale playback controls and
- * contextual scale information.  Clicking "Play" schedules each scale note
- * via `setTimeout`; clicking "Stop" aborts the playback sequence.
+ * Renders a compact bar below the fretboard with the scale play/stop toggle
+ * and contextual scale information.
  *
  * @returns The rendered footer bar element.
  */
 export default function FooterInfoBar(): React.ReactElement {
-  const {
-    selectedRoot,
-    selectedScale,
-    isPlayingScale,
-    setIsPlayingScale,
-  } = useGuitarStore();
+  const { selectedRoot, selectedScale, isPlayingScale, setIsPlayingScale } = useGuitarStore();
 
   const scale = SCALES[selectedScale];
   const scaleNotes = scale ? getScaleNotes(selectedRoot, scale.intervals) : [];
   const scaleName = scale ? `${selectedRoot} ${scale.name}` : selectedRoot;
 
-  /** Refs to all pending setTimeout handles so we can cancel them on stop. */
-  const timeoutRefs = useRef<ReturnType<typeof setTimeout>[]>([]);
-
-  /** Cancel all in-flight playback timers. */
-  const cancelPlayback = useCallback(() => {
-    for (const id of timeoutRefs.current) {
-      clearTimeout(id);
-    }
-    timeoutRefs.current = [];
-    setIsPlayingScale(false);
-  }, [setIsPlayingScale]);
-
-  /** Schedule each scale note at 250 ms intervals using setTimeout. */
-  const startPlayback = useCallback(() => {
-    if (scaleNotes.length === 0) return;
-
-    setIsPlayingScale(true);
-    timeoutRefs.current = [];
-
-    // Play each note sequentially
-    scaleNotes.forEach((note, index) => {
-      const handle = setTimeout(() => {
-        audioEngine.playNote(note, 4);
-      }, index * NOTE_INTERVAL_MS);
-      timeoutRefs.current.push(handle);
-    });
-
-    // Mark playback as finished after all notes have sounded
-    const finishHandle = setTimeout(() => {
-      setIsPlayingScale(false);
-      timeoutRefs.current = [];
-    }, scaleNotes.length * NOTE_INTERVAL_MS + 300);
-    timeoutRefs.current.push(finishHandle);
-  }, [scaleNotes, setIsPlayingScale]);
-
-  const handlePlayStop = useCallback(() => {
-    if (isPlayingScale) {
-      cancelPlayback();
-    } else {
-      startPlayback();
-    }
-  }, [isPlayingScale, cancelPlayback, startPlayback]);
+  const handlePlayStop = () => setIsPlayingScale(!isPlayingScale);
 
   return (
     <div
@@ -105,6 +54,7 @@ export default function FooterInfoBar(): React.ReactElement {
       <button
         type="button"
         onClick={handlePlayStop}
+        aria-keyshortcuts="Space"
         aria-label={isPlayingScale ? 'Stop scale playback' : 'Play scale'}
         style={{
           display: 'flex',
@@ -126,9 +76,8 @@ export default function FooterInfoBar(): React.ReactElement {
             fill="var(--accent-primary)"
             aria-hidden="true"
           >
-            {/* Stop icon: two rectangles */}
-            <rect x="3" y="3" width="4" height="12" rx="1" />
-            <rect x="11" y="3" width="4" height="12" rx="1" />
+            {/* Stop icon: a square */}
+            <rect x="4" y="4" width="10" height="10" rx="1.5" />
           </svg>
         ) : (
           <svg

@@ -99,6 +99,7 @@ export default function ProgressBar({
           return (
             <div
               key={i}
+              className="motion-loop"
               style={{
                 flex: 1,
                 height: 4,

@@ -13,6 +13,7 @@
  * Props: none — this component is fully self-contained.
  */
 
+import { useId } from 'react';
 import { useChordAI, GENRES } from '../hooks/useChordAI';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -26,22 +27,22 @@ import { useChordAI, GENRES } from '../hooks/useChordAI';
 function confidenceBadgeStyle(confidence: number): React.CSSProperties {
   if (confidence >= 0.8) {
     return {
-      background: 'rgba(76,175,80,0.15)',
+      background: 'var(--correct-soft)',
       color: 'var(--correct)',
-      border: '1px solid rgba(76,175,80,0.35)',
+      border: '1px solid var(--correct-line)',
     };
   }
   if (confidence >= 0.6) {
     return {
-      background: 'rgba(239,159,39,0.15)',
+      background: 'var(--accent-soft)',
       color: 'var(--accent-primary)',
-      border: '1px solid rgba(239,159,39,0.35)',
+      border: '1px solid var(--accent-line)',
     };
   }
   return {
-    background: 'rgba(239,68,68,0.1)',
+    background: 'var(--incorrect-soft)',
     color: 'var(--incorrect)',
-    border: '1px solid rgba(239,68,68,0.3)',
+    border: '1px solid var(--incorrect-line)',
   };
 }
 
@@ -56,6 +57,48 @@ const cardStyle: React.CSSProperties = {
 };
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
+
+/**
+ * Inline error shown next to the action that failed. role="alert" makes
+ * screen readers announce it as soon as it appears.
+ */
+function ErrorNotice({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  return (
+    <div
+      role="alert"
+      style={{
+        background: 'var(--incorrect-soft)',
+        border: '1px solid var(--incorrect-line)',
+        borderRadius: '8px',
+        padding: '12px 14px',
+        fontSize: '13px',
+        color: 'var(--text-body)',
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        gap: '12px',
+      }}
+    >
+      <p style={{ margin: 0, lineHeight: 1.45 }}>{message}</p>
+      <button
+        type="button"
+        onClick={onDismiss}
+        style={{
+          fontSize: '12px',
+          color: 'var(--text-secondary)',
+          background: 'transparent',
+          border: 'none',
+          cursor: 'pointer',
+          padding: 0,
+          textDecoration: 'underline',
+          flexShrink: 0,
+        }}
+      >
+        Dismiss
+      </button>
+    </div>
+  );
+}
 
 interface ApiKeySectionProps {
   apiKeyInput: string;
@@ -105,8 +148,8 @@ function ApiKeySection({
             style={{
               fontSize: '11px',
               color: 'var(--correct)',
-              background: 'rgba(76,175,80,0.12)',
-              border: '1px solid rgba(76,175,80,0.3)',
+              background: 'var(--correct-soft)',
+              border: '1px solid var(--correct-line)',
               padding: '2px 8px',
               borderRadius: '10px',
             }}
@@ -125,6 +168,9 @@ function ApiKeySection({
             <div style={{ position: 'relative', flex: 1 }}>
               <input
                 type={showApiKey ? 'text' : 'password'}
+                aria-label="Anthropic API key"
+                autoComplete="off"
+                spellCheck={false}
                 value={apiKeyInput}
                 onChange={(e) => onInputChange(e.target.value)}
                 onKeyDown={onKeyDown}
@@ -138,7 +184,6 @@ function ApiKeySection({
                   border: '1px solid var(--border-input)',
                   borderRadius: '6px',
                   color: 'var(--text-body)',
-                  outline: 'none',
                 }}
                 onFocus={(e) => {
                   e.currentTarget.style.borderColor = 'var(--accent-primary)';
@@ -148,7 +193,9 @@ function ApiKeySection({
                 }}
               />
               <button
+                type="button"
                 onClick={onToggleShow}
+                aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
                 title={showApiKey ? 'Hide key' : 'Show key'}
                 style={{
                   position: 'absolute',
@@ -176,7 +223,7 @@ function ApiKeySection({
                 border: 'none',
                 cursor: apiKeyInput.trim() ? 'pointer' : 'not-allowed',
                 background: 'var(--accent-primary)',
-                color: '#1C1714',
+                color: 'var(--on-accent)',
                 fontWeight: 600,
                 opacity: apiKeyInput.trim() ? 1 : 0.45,
                 transition: 'opacity 0.15s ease',
@@ -236,8 +283,14 @@ export default function ChordAI() {
 
     progression, highlightedChord, setHighlightedChord,
 
-    error, setError,
+    error, errorScope, setError,
   } = useChordAI();
+
+  const deviceSelectId = useId();
+  const chatInputId = useId();
+  const genreHeadingId = useId();
+  const listenError = error && errorScope === 'listen' ? error : null;
+  const apiError = error && errorScope !== 'listen' ? error : null;
 
   return (
     <div
@@ -308,10 +361,11 @@ export default function ChordAI() {
             {/* Device selector */}
             {audioDevices.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                <label htmlFor={deviceSelectId} style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                   Input Device
                 </label>
                 <select
+                  id={deviceSelectId}
                   value={selectedDevice}
                   onChange={(e) => setSelectedDevice(e.target.value)}
                   style={{
@@ -321,7 +375,6 @@ export default function ChordAI() {
                     border: '1px solid var(--border-input)',
                     borderRadius: '6px',
                     color: 'var(--text-body)',
-                    outline: 'none',
                     cursor: 'pointer',
                   }}
                 >
@@ -349,6 +402,11 @@ export default function ChordAI() {
                   <span>{Math.round(listeningProgress)}%</span>
                 </div>
                 <div
+                  role="progressbar"
+                  aria-label="Listening"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(listeningProgress)}
                   style={{
                     height: '6px',
                     background: 'var(--bg-primary)',
@@ -368,7 +426,9 @@ export default function ChordAI() {
               </div>
             ) : (
               <button
+                type="button"
                 onClick={handleListen}
+                aria-label="Listen for 2.5 seconds"
                 style={{
                   padding: '10px 16px',
                   fontSize: '13px',
@@ -377,7 +437,7 @@ export default function ChordAI() {
                   border: 'none',
                   cursor: 'pointer',
                   background: 'var(--accent-primary)',
-                  color: '#1C1714',
+                  color: 'var(--on-accent)',
                   transition: 'opacity 0.15s ease',
                   display: 'flex',
                   alignItems: 'center',
@@ -387,12 +447,13 @@ export default function ChordAI() {
                 onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = '0.88'; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = '1'; }}
               >
-                <span style={{ fontSize: '16px', lineHeight: 1 }}>&#9679;</span>
+                <span aria-hidden="true" style={{ fontSize: '16px', lineHeight: 1 }}>&#9679;</span>
                 Listen 2.5s
               </button>
             )}
 
-            {/* Detection result */}
+            {/* Detection result, announced when it arrives */}
+            <div role="status" aria-live="polite" aria-atomic="true">
             {detectedChord && !isListening && (
               <div
                 style={{
@@ -438,6 +499,11 @@ export default function ChordAI() {
                 </span>
               </div>
             )}
+            </div>
+
+            {listenError && !isListening && (
+              <ErrorNotice message={listenError} onDismiss={() => setError(null)} />
+            )}
           </>
         )}
       </div>
@@ -445,6 +511,7 @@ export default function ChordAI() {
       {/* ── Genre + Generate ── */}
       <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <h3
+          id={genreHeadingId}
           style={{
             fontSize: '13px',
             fontWeight: 500,
@@ -455,13 +522,19 @@ export default function ChordAI() {
           Genre
         </h3>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+        <div
+          role="group"
+          aria-labelledby={genreHeadingId}
+          style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}
+        >
           {GENRES.map((genre) => {
             const isActive = selectedGenre === genre;
             return (
               <button
                 key={genre}
+                type="button"
                 onClick={() => setSelectedGenre(genre)}
+                aria-pressed={isActive}
                 style={{
                   padding: '5px 12px',
                   fontSize: '12px',
@@ -470,7 +543,7 @@ export default function ChordAI() {
                   border: '1px solid var(--border-subtle)',
                   cursor: 'pointer',
                   background: isActive ? 'var(--accent-primary)' : 'var(--bg-elevated)',
-                  color: isActive ? '#1C1714' : 'var(--text-secondary)',
+                  color: isActive ? 'var(--on-accent)' : 'var(--text-secondary)',
                   textTransform: 'capitalize',
                   transition: 'background 0.15s ease, color 0.15s ease',
                 }}
@@ -482,8 +555,10 @@ export default function ChordAI() {
         </div>
 
         <button
+          type="button"
           onClick={handleGenerate}
           disabled={!canGenerate}
+          aria-busy={isGenerating}
           title={
             !apiKeySet
               ? 'Set your API key first'
@@ -499,7 +574,7 @@ export default function ChordAI() {
             border: 'none',
             cursor: canGenerate ? 'pointer' : 'not-allowed',
             background: canGenerate ? 'var(--accent-hover)' : 'var(--bg-elevated)',
-            color: canGenerate ? '#1C1714' : 'var(--text-muted)',
+            color: canGenerate ? 'var(--on-accent)' : 'var(--text-muted)',
             opacity: canGenerate ? 1 : 0.55,
             transition: 'opacity 0.15s ease, background 0.15s ease',
             display: 'flex',
@@ -511,11 +586,13 @@ export default function ChordAI() {
           {isGenerating ? (
             <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span
+                aria-hidden="true"
+                className="motion-spin"
                 style={{
                   display: 'inline-block',
                   width: '12px',
                   height: '12px',
-                  border: '2px solid #1C1714',
+                  border: '2px solid var(--on-accent)',
                   borderTopColor: 'transparent',
                   borderRadius: '50%',
                   animation: 'spin 0.7s linear infinite',
@@ -538,6 +615,11 @@ export default function ChordAI() {
             Listen for a chord first, then generate a progression.
           </p>
         )}
+
+        {/* Generation errors sit by the button; follow-up errors sit by the chat input */}
+        {apiError && messages.length === 0 && (
+          <ErrorNotice message={apiError} onDismiss={() => setError(null)} />
+        )}
       </div>
 
       {/* ── Progression Display ── */}
@@ -559,8 +641,11 @@ export default function ChordAI() {
               const isHighlighted = highlightedChord === chord;
               return (
                 <button
+                  className="motion-scale"
                   key={i}
+                  type="button"
                   onClick={() => setHighlightedChord(isHighlighted ? null : chord)}
+                  aria-pressed={isHighlighted}
                   style={{
                     padding: '8px 16px',
                     fontSize: '14px',
@@ -571,7 +656,7 @@ export default function ChordAI() {
                       : '1px solid var(--border-subtle)',
                     cursor: 'pointer',
                     background: isHighlighted ? 'var(--accent-primary)' : 'var(--bg-elevated)',
-                    color: isHighlighted ? '#1C1714' : 'var(--text-body)',
+                    color: isHighlighted ? 'var(--on-accent)' : 'var(--text-body)',
                     transform: isHighlighted ? 'scale(1.06)' : 'scale(1)',
                     transition: 'all 0.15s ease',
                   }}
@@ -586,10 +671,10 @@ export default function ChordAI() {
             <div
               style={{
                 padding: '12px',
-                background: 'var(--bg-elevated)',
+                background: 'var(--accent-soft)',
+                border: '1px solid var(--accent-line)',
                 borderRadius: '8px',
                 textAlign: 'center',
-                borderLeft: '3px solid var(--accent-primary)',
               }}
             >
               <span
@@ -628,6 +713,10 @@ export default function ChordAI() {
           </div>
 
           <div
+            role="log"
+            aria-label="Conversation with Claude"
+            aria-live="polite"
+            aria-relevant="additions"
             style={{
               padding: '16px',
               display: 'flex',
@@ -656,13 +745,12 @@ export default function ChordAI() {
                     ...(msg.role === 'user'
                       ? {
                           background: 'var(--accent-primary)',
-                          color: '#1C1714',
+                          color: 'var(--on-accent)',
                         }
                       : {
                           background: 'var(--bg-elevated)',
                           color: 'var(--text-body)',
                           border: '1px solid var(--border-subtle)',
-                          borderLeft: '3px solid var(--accent-primary)',
                         }),
                   }}
                 >
@@ -690,6 +778,12 @@ export default function ChordAI() {
             <div ref={messagesEndRef} />
           </div>
 
+          {apiError && (
+            <div style={{ padding: '12px 16px 0' }}>
+              <ErrorNotice message={apiError} onDismiss={() => setError(null)} />
+            </div>
+          )}
+
           <div
             style={{
               padding: '12px 16px',
@@ -698,7 +792,11 @@ export default function ChordAI() {
               gap: '8px',
             }}
           >
+            <label htmlFor={chatInputId} className="sr-only">
+              Follow-up message to Claude
+            </label>
             <input
+              id={chatInputId}
               type="text"
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
@@ -713,7 +811,6 @@ export default function ChordAI() {
                 border: '1px solid var(--border-input)',
                 borderRadius: '6px',
                 color: 'var(--text-body)',
-                outline: 'none',
                 opacity: isGenerating ? 0.5 : 1,
               }}
               onFocus={(e) => {
@@ -724,6 +821,7 @@ export default function ChordAI() {
               }}
             />
             <button
+              type="button"
               onClick={handleSendMessage}
               disabled={!inputMessage.trim() || isGenerating}
               style={{
@@ -734,7 +832,7 @@ export default function ChordAI() {
                 border: 'none',
                 cursor: inputMessage.trim() && !isGenerating ? 'pointer' : 'not-allowed',
                 background: 'var(--accent-primary)',
-                color: '#1C1714',
+                color: 'var(--on-accent)',
                 opacity: inputMessage.trim() && !isGenerating ? 1 : 0.4,
                 transition: 'opacity 0.15s ease',
                 flexShrink: 0,
@@ -746,41 +844,6 @@ export default function ChordAI() {
         </div>
       )}
 
-      {/* ── Error ── */}
-      {error && (
-        <div
-          style={{
-            background: 'rgba(239,68,68,0.08)',
-            border: '1px solid rgba(239,68,68,0.3)',
-            borderRadius: '8px',
-            padding: '12px 14px',
-            fontSize: '13px',
-            color: 'var(--incorrect)',
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: '8px',
-          }}
-        >
-          <span style={{ flexShrink: 0, marginTop: '1px' }}>!</span>
-          <div style={{ flex: 1 }}>
-            <p style={{ margin: '0 0 6px 0' }}>{error}</p>
-            <button
-              onClick={() => setError(null)}
-              style={{
-                fontSize: '12px',
-                color: 'var(--incorrect)',
-                background: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                padding: 0,
-                textDecoration: 'underline',
-              }}
-            >
-              Dismiss
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

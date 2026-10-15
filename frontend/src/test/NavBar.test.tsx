@@ -83,22 +83,22 @@ describe('NavBar tab rendering', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('NavBar active tab styling', () => {
-  it('fretboard tab button has aria-selected="true" (active tab is fretboard)', () => {
+  it('fretboard nav button has aria-current="page" (active tab is fretboard)', () => {
     render(<NavBar />);
-    // Tab buttons use role="tab" and aria-selected
-    const tabButtons = screen.getAllByRole('tab');
+    // Nav buttons switch whole views, so they mark the current one with aria-current
+    const tabButtons = screen.getAllByRole('button');
     const fretboardTab = tabButtons.find(
       (btn) => btn.textContent === 'Fretboard'
     );
     expect(fretboardTab).toBeDefined();
-    expect(fretboardTab?.getAttribute('aria-selected')).toBe('true');
+    expect(fretboardTab?.getAttribute('aria-current')).toBe('page');
   });
 
-  it('scales tab button has aria-selected="false" when fretboard is active', () => {
+  it('scales nav button has no aria-current when fretboard is active', () => {
     render(<NavBar />);
-    const tabButtons = screen.getAllByRole('tab');
+    const tabButtons = screen.getAllByRole('button');
     const scalesTab = tabButtons.find((btn) => btn.textContent === 'Scales');
-    expect(scalesTab?.getAttribute('aria-selected')).toBe('false');
+    expect(scalesTab?.hasAttribute('aria-current')).toBe(false);
   });
 });
 
@@ -109,7 +109,7 @@ describe('NavBar active tab styling', () => {
 describe('NavBar tab clicks', () => {
   it('clicking Scales tab calls setActiveTab("scales")', () => {
     render(<NavBar />);
-    const tabButtons = screen.getAllByRole('tab');
+    const tabButtons = screen.getAllByRole('button');
     const scalesBtn = tabButtons.find((btn) => btn.textContent === 'Scales');
     if (scalesBtn) fireEvent.click(scalesBtn);
     expect(mockSetActiveTab).toHaveBeenCalledWith('scales');
@@ -117,7 +117,7 @@ describe('NavBar tab clicks', () => {
 
   it('clicking Fretboard tab calls setActiveTab("fretboard")', () => {
     render(<NavBar />);
-    const tabButtons = screen.getAllByRole('tab');
+    const tabButtons = screen.getAllByRole('button');
     const fretboardBtn = tabButtons.find((btn) => btn.textContent === 'Fretboard');
     if (fretboardBtn) fireEvent.click(fretboardBtn);
     expect(mockSetActiveTab).toHaveBeenCalledWith('fretboard');
@@ -125,30 +125,13 @@ describe('NavBar tab clicks', () => {
 
   it('clicking Ear Training tab calls setActiveTab("ear-training")', () => {
     render(<NavBar />);
-    const tabButtons = screen.getAllByRole('tab');
+    const tabButtons = screen.getAllByRole('button');
     const earBtn = tabButtons.find((btn) => btn.textContent === 'Ear Training');
     if (earBtn) fireEvent.click(earBtn);
     expect(mockSetActiveTab).toHaveBeenCalledWith('ear-training');
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Audio shelf button
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('NavBar audio shelf button', () => {
-  it('renders the audio controls button', () => {
-    render(<NavBar />);
-    expect(screen.getByLabelText('Open audio controls')).toBeDefined();
-  });
-
-  it('clicking the ⚙ button calls setIsAudioShelfOpen(true)', () => {
-    render(<NavBar />);
-    const settingsBtn = screen.getByLabelText('Open audio controls');
-    fireEvent.click(settingsBtn);
-    expect(mockSetIsAudioShelfOpen).toHaveBeenCalledWith(true);
-  });
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mobile "More" overflow button

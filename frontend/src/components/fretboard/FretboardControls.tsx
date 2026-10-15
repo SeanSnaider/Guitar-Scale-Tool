@@ -22,7 +22,7 @@
  * On screens narrower than 768 px the three dropdowns stack vertically.
  */
 
-import React, { useMemo } from 'react';
+import React, { useId, useMemo } from 'react';
 import { useGuitarStore } from '../../store/useGuitarStore';
 import {
   ALL_NOTES,
@@ -122,9 +122,12 @@ export default function FretboardControls(): React.ReactElement {
     border: 'none',
     cursor: 'pointer',
     background: active ? 'var(--accent-primary)' : 'var(--bg-elevated)',
-    color: active ? '#1C1714' : 'var(--text-secondary)',
+    color: active ? 'var(--on-accent)' : 'var(--text-secondary)',
     transition: 'all 150ms ease',
   });
+
+  const fretsId = useId();
+  const positionLabelId = useId();
 
   const sysBtnStyle = (active: boolean): React.CSSProperties => ({
     padding: '5px 14px',
@@ -135,7 +138,7 @@ export default function FretboardControls(): React.ReactElement {
     border: '1px solid ' + (active ? 'var(--accent-primary)' : 'var(--border-subtle)'),
     cursor: 'pointer',
     background: active ? 'var(--accent-primary)' : 'transparent',
-    color: active ? '#1C1714' : 'var(--text-secondary)',
+    color: active ? 'var(--on-accent)' : 'var(--text-secondary)',
     transition: 'all 150ms ease',
   });
 
@@ -189,8 +192,9 @@ export default function FretboardControls(): React.ReactElement {
           />
         </div>
 
-        {/* Centre divider */}
+        {/* Centre divider: only once both groups fit on one line */}
         <div
+          className="hidden xl:block"
           style={{
             width: 1,
             background: 'var(--border-subtle)',
@@ -223,6 +227,7 @@ export default function FretboardControls(): React.ReactElement {
               Display
             </span>
             <SegmentedToggle
+              ariaLabel="Display mode"
               options={[...DISPLAY_MODE_OPTIONS]}
               value={displayMode}
               onChange={(v) => setDisplayMode(v as typeof displayMode)}
@@ -265,7 +270,8 @@ export default function FretboardControls(): React.ReactElement {
               minWidth: 100,
             }}
           >
-            <span
+            <label
+              htmlFor={fretsId}
               style={{
                 fontSize: 11,
                 color: 'var(--text-secondary)',
@@ -274,8 +280,9 @@ export default function FretboardControls(): React.ReactElement {
               }}
             >
               Frets: {numFrets}
-            </span>
+            </label>
             <input
+              id={fretsId}
               type="range"
               min={12}
               max={24}
@@ -301,6 +308,7 @@ export default function FretboardControls(): React.ReactElement {
         }}
       >
         <span
+          id={positionLabelId}
           style={{
             fontSize: 11,
             color: 'var(--text-secondary)',
@@ -313,10 +321,15 @@ export default function FretboardControls(): React.ReactElement {
         </span>
 
         {/* CAGED / 3NPS toggle */}
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div
+          role="group"
+          aria-label="Position system"
+          style={{ display: 'flex', gap: 6 }}
+        >
           <button
             type="button"
             onClick={() => { setPositionSystem('caged'); setSelectedPosition(1); }}
+            aria-pressed={positionSystem === 'caged'}
             style={sysBtnStyle(positionSystem === 'caged')}
           >
             CAGED
@@ -324,14 +337,16 @@ export default function FretboardControls(): React.ReactElement {
           <button
             type="button"
             onClick={() => { setPositionSystem('3nps'); setSelectedPosition(1); }}
+            aria-pressed={positionSystem === '3nps'}
             style={sysBtnStyle(positionSystem === '3nps')}
           >
             3NPS
           </button>
         </div>
 
-        {/* Divider */}
+        {/* Divider: hidden on phones, where the position buttons wrap below */}
         <div
+          className="hidden sm:block"
           style={{
             width: 1,
             background: 'var(--border-subtle)',
@@ -342,10 +357,16 @@ export default function FretboardControls(): React.ReactElement {
         />
 
         {/* All + numbered position buttons */}
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+        <div
+          role="group"
+          aria-labelledby={positionLabelId}
+          style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}
+        >
           <button
             type="button"
             onClick={() => setSelectedPosition(null)}
+            aria-pressed={selectedPosition === null}
+            aria-label="All positions"
             style={positionBtnStyle(selectedPosition === null)}
           >
             All
@@ -355,6 +376,8 @@ export default function FretboardControls(): React.ReactElement {
               key={pos}
               type="button"
               onClick={() => setSelectedPosition(pos)}
+              aria-pressed={selectedPosition === pos}
+              aria-label={`Position ${pos}`}
               style={positionBtnStyle(selectedPosition === pos)}
             >
               {pos}

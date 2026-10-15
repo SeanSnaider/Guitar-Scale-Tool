@@ -129,7 +129,7 @@ const rowStyle: React.CSSProperties = {
 const noteStyle: React.CSSProperties = {
   fontSize: '14px',
   minWidth: '28px',
-  fontFamily: "'Courier New', Courier, monospace",
+  fontFamily: 'var(--font-mono)',
 };
 
 /** Degree badge (e.g. b3, #4). */
@@ -137,7 +137,7 @@ const degreeStyle: React.CSSProperties = {
   fontSize: '11px',
   color: 'var(--text-muted)',
   minWidth: '28px',
-  fontFamily: "'Courier New', Courier, monospace",
+  fontFamily: 'var(--font-mono)',
 };
 
 /** Interval name column. */

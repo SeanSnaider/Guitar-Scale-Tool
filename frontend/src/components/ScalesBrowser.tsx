@@ -148,7 +148,7 @@ function ScaleCard({ entry, isSelected, onLoad }: ScaleCardProps) {
       {/* Degree formula */}
       <div
         style={{
-          fontFamily: 'monospace',
+          fontFamily: 'var(--font-mono)',
           fontSize: '13px',
           color: 'var(--accent-glow)',
           letterSpacing: '0.02em',
@@ -159,11 +159,13 @@ function ScaleCard({ entry, isSelected, onLoad }: ScaleCardProps) {
 
       {/* Load button */}
       <button
+        type="button"
         onClick={() => onLoad(entry.key)}
+        aria-label={isSelected ? `${entry.name}, currently loaded` : `Load ${entry.name} on fretboard`}
         style={{
           marginTop: '4px',
           background: isSelected ? 'var(--accent-primary)' : 'var(--bg-elevated)',
-          color: isSelected ? '#1C1714' : 'var(--text-secondary)',
+          color: isSelected ? 'var(--on-accent)' : 'var(--text-secondary)',
           fontWeight: isSelected ? 600 : 400,
           border: '1px solid var(--border-subtle)',
           borderRadius: '6px',
@@ -276,7 +278,8 @@ export default function ScalesBrowser() {
       {/* Search input */}
       <div style={{ marginBottom: '16px' }}>
         <input
-          type="text"
+          type="search"
+          aria-label="Search scales"
           value={scaleSearchQuery}
           onChange={(e) => setScaleSearchQuery(e.target.value)}
           placeholder="Search scales..."
@@ -287,9 +290,8 @@ export default function ScalesBrowser() {
             border: '1px solid var(--border-input)',
             borderRadius: '6px',
             padding: '10px 14px',
-            fontSize: '14px',
+            fontSize: '16px', // 16px keeps iOS Safari from zooming on focus
             color: 'var(--text-body)',
-            outline: 'none',
           }}
           onFocus={(e) => {
             e.currentTarget.style.borderColor = 'var(--accent-primary)';
@@ -304,6 +306,8 @@ export default function ScalesBrowser() {
 
       {/* Category filter pills */}
       <div
+        role="group"
+        aria-label="Scale category"
         style={{
           display: 'flex',
           flexWrap: 'wrap',
@@ -313,10 +317,12 @@ export default function ScalesBrowser() {
       >
         {/* "All" pill */}
         <button
+          type="button"
           onClick={() => setSelectedCategory(null)}
+          aria-pressed={selectedCategory === null}
           style={{
             background: selectedCategory === null ? 'var(--accent-primary)' : 'var(--bg-elevated)',
-            color: selectedCategory === null ? '#1C1714' : 'var(--text-secondary)',
+            color: selectedCategory === null ? 'var(--on-accent)' : 'var(--text-secondary)',
             fontWeight: selectedCategory === null ? 600 : 400,
             border: '1px solid var(--border-subtle)',
             borderRadius: '6px',
@@ -334,11 +340,13 @@ export default function ScalesBrowser() {
           return (
             <button
               key={cat.id}
+              type="button"
               onClick={() => setSelectedCategory(isActive ? null : cat.id)}
+              aria-pressed={isActive}
               title={cat.description}
               style={{
                 background: isActive ? 'var(--accent-primary)' : 'var(--bg-elevated)',
-                color: isActive ? '#1C1714' : 'var(--text-secondary)',
+                color: isActive ? 'var(--on-accent)' : 'var(--text-secondary)',
                 fontWeight: isActive ? 600 : 400,
                 border: '1px solid var(--border-subtle)',
                 borderRadius: '6px',
@@ -354,8 +362,9 @@ export default function ScalesBrowser() {
         })}
       </div>
 
-      {/* Result count */}
+      {/* Result count (announced politely as the filter changes) */}
       <div
+        role="status"
         style={{
           fontSize: '13px',
           fontWeight: 500,

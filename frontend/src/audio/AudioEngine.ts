@@ -110,7 +110,11 @@ class AudioEngine {
 
     this._initializingPromise = (async () => {
       try {
-        this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        // Older Safari only exposes the prefixed constructor
+        const Ctor =
+          window.AudioContext ??
+          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        this.audioContext = new Ctor();
 
         // Dynamics compressor → destination (prevents clipping when chords/multiple notes play)
         const compressor = this.audioContext.createDynamicsCompressor();
