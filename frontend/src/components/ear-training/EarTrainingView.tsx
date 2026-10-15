@@ -7,17 +7,19 @@
  *
  *   1. Intervals — user hears two notes and identifies the interval name.
  *   2. Notes     — user hears a single note and identifies its name.
- *   3. Scales    — user hears the first five notes of a scale and identifies
- *                  the scale type.
+ *   3. Scales    — user hears a full scale ascending (root to octave) and
+ *                  identifies the scale type.
  *   4. Sequence  — preserved from PracticeMode; user plays scale notes on the
- *                  fretboard in order; mastery tracking via the backend API.
+ *                  fretboard in order. Mastery is tracked locally in the store
+ *                  (sequenceMastery); the backend is an optional sync.
  *
  * Session flow:
  *   Start screen → 10-question quiz → End screen (score + "Try Again")
  *
  * Backend integration:
  *   - startSession / endSession called at quiz boundaries.
- *   - recordScaleAttempt called after each scales-mode question.
+ *   - recordScaleAttempt is fire-and-forget sync (scales questions, sequence
+ *     runs); its response never drives local state.
  *   - All backend errors are silently swallowed; they never block the UI.
  *
  * Store integration:
@@ -34,6 +36,7 @@ import React, {
   useMemo,
 } from 'react';
 import { useGuitarStore } from '../../store/useGuitarStore';
+import { learnedScaleKey } from '../../store/progress';
 import { audioEngine } from '../../audio/AudioEngine';
 import { ALL_NOTES, SCALES, getScaleNotes } from '../../data/musicTheory';
 import {
@@ -55,6 +58,15 @@ const TOTAL_QUESTIONS = 10;
 
 /** Milliseconds the feedback colours are shown before advancing. */
 const FEEDBACK_DELAY_MS = 800;
+
+/** Sequence runs only count toward mastery at or above this metronome BPM. */
+const MASTERY_BPM = 120;
+
+/** Consecutive clean runs at MASTERY_BPM that mark a scale learned. */
+const MASTERY_RUNS = 3;
+
+/** Gap between notes of a Scales-mode question. */
+const SCALE_NOTE_GAP_MS = 250;
 
 /**
  * Maps semitone distances (1–11) to their interval names.
@@ -100,12 +112,20 @@ type EarMode = 'intervals' | 'notes' | 'scales' | 'sequence';
 /** Session lifecycle state machine. */
 type SessionPhase = 'start' | 'active' | 'end';
 
+/**
+ * Schedules a callback after a delay. The view passes its own `later`, so
+ * every pending note is cancelled when the user leaves or changes mode.
+ */
+type Scheduler = (fn: () => void, ms: number) => void;
+
 /** A fully-formed question ready to be rendered. */
 interface Question {
   /** Unique monotonic ID used as React key when switching questions. */
   id: number;
-  /** Called to play (or replay) the audio for this question. */
-  audioToPlay: () => void;
+  /** Plays (or replays) the question audio; delayed notes go through `schedule`. */
+  audioToPlay: (schedule: Scheduler) => void;
+  /** Roughly how long the audio lasts, for the "playing" indicator. */
+  durationMs: number;
   /** Instruction text shown in the QuestionPrompt heading. */
   questionText: string;
   /** Four answer options offered to the user. */
@@ -187,10 +207,11 @@ function generateIntervalQuestion(): Question {
   return {
     id: ++questionCounter,
     questionText: 'What interval is this?',
-    audioToPlay: () => {
+    audioToPlay: (schedule) => {
       audioEngine.playNote(rootNote, 4);
-      setTimeout(() => audioEngine.playNote(secondNote, secondOctave), 400);
+      schedule(() => audioEngine.playNote(secondNote, secondOctave), 400);
     },
+    durationMs: 1200,
     options,
     correctAnswer,
   };
@@ -218,6 +239,7 @@ function generateNoteQuestion(): Question {
     id: ++questionCounter,
     questionText: 'What note is this?',
     audioToPlay: () => audioEngine.playNote(note, 4),
+    durationMs: 1200,
     options,
     correctAnswer: note,
   };
@@ -226,9 +248,10 @@ function generateNoteQuestion(): Question {
 /**
  * Generates a random Scales-mode question.
  *
- * Picks a random root and scale type from the curated list, plays the first
- * five scale notes ascending (250 ms apart), and offers four scale names as
- * answers.
+ * Picks a random root and scale type from the curated list, plays the whole
+ * scale ascending from the root up to the root an octave higher (250 ms
+ * apart), and offers four scale names as answers. The full run matters:
+ * modes like Natural Minor and Dorian share their first five notes.
  *
  * @returns A complete Question object.
  */
@@ -238,10 +261,17 @@ function generateScaleQuestion(): Question {
   const scaleKeyIdx = randInt(SCALE_MODE_KEYS.length);
   const scaleKey = SCALE_MODE_KEYS[scaleKeyIdx];
   const scale = SCALES[scaleKey];
-  const scaleNotes = getScaleNotes(rootNote, scale.intervals);
 
-  // Play the first 5 notes ascending at octave 4 (250 ms apart)
-  const notesToPlay = scaleNotes.slice(0, 5);
+  // Ascend from the root at octave 4. Like the interval generator, a degree
+  // whose pitch class wraps past B (rootIdx + interval >= 12) moves up an
+  // octave, so the run never drops mid-scale. Ends on the octave root.
+  const notesToPlay: Array<{ note: string; octave: number }> = [
+    ...scale.intervals.map((iv) => {
+      const abs = rootIdx + iv;
+      return { note: ALL_NOTES[abs % 12], octave: 4 + Math.floor(abs / 12) };
+    }),
+    { note: rootNote, octave: 5 },
+  ];
 
   const correctAnswer = scaleKey;
   const correctLabel = scale.name;
@@ -255,11 +285,13 @@ function generateScaleQuestion(): Question {
   return {
     id: ++questionCounter,
     questionText: 'What scale is this?',
-    audioToPlay: () => {
-      notesToPlay.forEach((note, i) => {
-        setTimeout(() => audioEngine.playNote(note, 4), i * 250);
+    audioToPlay: (schedule) => {
+      notesToPlay.forEach(({ note, octave }, i) => {
+        if (i === 0) audioEngine.playNote(note, octave);
+        else schedule(() => audioEngine.playNote(note, octave), i * SCALE_NOTE_GAP_MS);
       });
     },
+    durationMs: notesToPlay.length * SCALE_NOTE_GAP_MS + 400,
     correctAnswer,
     options,
   };
@@ -311,7 +343,10 @@ export default function EarTrainingView(): React.ReactElement {
     metronome,
     addXP,
     addPracticeMinutes,
-    toggleLearnedScale,
+    markScaleLearned,
+    recordPracticeDay,
+    sequenceMastery,
+    setSequenceMastery,
   } = useGuitarStore();
 
   // Map store's 3-mode type to our 4-mode type (sequence is local only)
@@ -329,6 +364,8 @@ export default function EarTrainingView(): React.ReactElement {
   const [result, setResult] = useState<'correct' | 'incorrect' | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isAdvancing, setIsAdvancing] = useState(false);
+  /** True after "Try again", so the start screen takes focus when it mounts. */
+  const [focusStart, setFocusStart] = useState(false);
 
   // Pending timeouts (feedback delay, auto-play, banners). Cleared on unmount
   // and on mode change, so a late timer can't advance a session the user left.
@@ -363,9 +400,13 @@ export default function EarTrainingView(): React.ReactElement {
   const [sequenceIndex, setSequenceIndex] = useState(0);
   const [seqScore, setSeqScore] = useState(0);
   const [seqTotal, setSeqTotal] = useState(0);
-  const [consecutiveCorrect, setConsecutiveCorrect] = useState(0);
   const [justLearnedMessage, setJustLearnedMessage] = useState<string | null>(null);
   const sequenceRunsRef = useRef(0);
+  /**
+   * Whether the run in progress still qualifies for mastery: every note so
+   * far was right and played at >= MASTERY_BPM. Reset when a run starts.
+   */
+  const runQualifiesRef = useRef(true);
 
   const scale = SCALES[selectedScale];
   /** Display name ("Major (Ionian)"), not the registry key ("major"). */
@@ -375,7 +416,9 @@ export default function EarTrainingView(): React.ReactElement {
     [selectedRoot, scale],
   );
 
-  const scaleKey = `${selectedRoot}-${selectedScale}`;
+  const scaleKey = learnedScaleKey(selectedRoot, selectedScale);
+  /** Local mastery: consecutive clean runs at >= MASTERY_BPM (persisted). */
+  const consecutiveCorrect = sequenceMastery[scaleKey] ?? 0;
 
   // ── Mode selector options ──────────────────────────────────────────────────
 
@@ -413,34 +456,48 @@ export default function EarTrainingView(): React.ReactElement {
   // ── Backend: record scale attempt ──────────────────────────────────────────
 
   /**
-   * Records a scale attempt to the backend (scales mode + sequence mode).
-   * Silently ignores network errors.
+   * Fire-and-forget sync of a scale attempt to the optional backend. The
+   * response is ignored: mastery is tracked locally (see recordSequenceMastery).
    *
    * @param correct - Whether the user answered correctly.
-   * @param bpm     - Current metronome BPM (used for mastery threshold).
+   * @param bpm     - Current metronome BPM.
    */
   const reportScaleAttempt = useCallback(
-    async (correct: boolean, bpm: number) => {
-      try {
-        const res = await recordScaleAttempt(
-          scaleKey,
-          bpm,
-          correct,
-          backendSessionRef.current?.id,
-        );
-        setConsecutiveCorrect(res.mastery.consecutive_correct);
-        if (res.just_learned) {
-          toggleLearnedScale(scaleKey);
-          setJustLearnedMessage(`${selectedRoot} ${scaleName} is now learned!`);
-          announce(`${selectedRoot} ${scaleName} is now learned.`);
-          addXP(50);
-          later(() => setJustLearnedMessage(null), 4000);
-        }
-      } catch {
-        // Backend unreachable — silently continue
+    (correct: boolean, bpm: number) => {
+      recordScaleAttempt(scaleKey, bpm, correct, backendSessionRef.current?.id).catch(() => {
+        // Backend unreachable: local progress is unaffected
+      });
+    },
+    [scaleKey],
+  );
+
+  /**
+   * Local sequence mastery. A clean run (no wrong notes, every note at
+   * >= MASTERY_BPM) adds one; a wrong note at >= MASTERY_BPM resets to 0;
+   * slower runs don't count either way. Reaching MASTERY_RUNS marks the
+   * scale learned (once) and shows the "learned" message.
+   *
+   * @param outcome - 'run' when a qualifying run completes, 'miss' on a wrong note.
+   */
+  const recordSequenceMastery = useCallback(
+    (outcome: 'run' | 'miss') => {
+      const state = useGuitarStore.getState();
+      const current = state.sequenceMastery[scaleKey] ?? 0;
+      if (outcome === 'miss') {
+        if (current !== 0) setSequenceMastery(scaleKey, 0);
+        return;
+      }
+      const next = Math.min(current + 1, MASTERY_RUNS);
+      if (next !== current) setSequenceMastery(scaleKey, next);
+      if (next >= MASTERY_RUNS && !state.learnedScales.has(scaleKey)) {
+        markScaleLearned(scaleKey);
+        addXP(50);
+        setJustLearnedMessage(`${selectedRoot} ${scaleName} is now learned!`);
+        announce(`${selectedRoot} ${scaleName} is now learned.`);
+        later(() => setJustLearnedMessage(null), 4000);
       }
     },
-    [scaleKey, selectedRoot, scaleName, toggleLearnedScale, addXP, announce, later],
+    [scaleKey, selectedRoot, scaleName, setSequenceMastery, markScaleLearned, addXP, announce, later],
   );
 
   // ── Sequence mode: wire fretboard note clicks ──────────────────────────────
@@ -453,8 +510,14 @@ export default function EarTrainingView(): React.ReactElement {
 
     const posInScale = sequenceIndex % scaleNotes.length;
     const targetNote = scaleNotes[posInScale];
+    const bpm = metronome.bpm;
+    const fastEnough = bpm >= MASTERY_BPM;
+
+    // A new run starts on the first note of the scale
+    if (posInScale === 0 && clicked === targetNote) runQualifiesRef.current = true;
 
     if (clicked === targetNote) {
+      if (!fastEnough) runQualifiesRef.current = false;
       const nextIndex = sequenceIndex + 1;
       announce(`${clicked}, correct. Next: ${scaleNotes[nextIndex % scaleNotes.length]}.`);
       setSequenceIndex(nextIndex);
@@ -463,15 +526,18 @@ export default function EarTrainingView(): React.ReactElement {
 
       if (posInScale === scaleNotes.length - 1) {
         sequenceRunsRef.current += 1;
-        void reportScaleAttempt(true, metronome.bpm);
+        if (runQualifiesRef.current) recordSequenceMastery('run');
+        reportScaleAttempt(true, bpm);
       }
     } else {
       announce(`${clicked} is not it. Play ${targetNote}.`);
       setSeqTotal((t) => t + 1);
-      void reportScaleAttempt(false, metronome.bpm);
+      runQualifiesRef.current = false;
+      if (fastEnough) recordSequenceMastery('miss');
+      reportScaleAttempt(false, bpm);
     }
     },
-    [phase, activeMode, scaleNotes, sequenceIndex, reportScaleAttempt, metronome.bpm, announce],
+    [phase, activeMode, scaleNotes, sequenceIndex, reportScaleAttempt, recordSequenceMastery, metronome.bpm, announce],
   );
 
   useEffect(
@@ -517,9 +583,9 @@ export default function EarTrainingView(): React.ReactElement {
       // Auto-play after a short layout delay
       later(() => {
         setIsPlaying(true);
-        q.audioToPlay();
+        q.audioToPlay(later);
         // Mark as finished playing after a generous window
-        later(() => setIsPlaying(false), 1200);
+        later(() => setIsPlaying(false), q.durationMs);
       }, 150);
     },
     [buildAnswersArray, setEarTrainingAnswers, announce, later],
@@ -570,6 +636,7 @@ export default function EarTrainingView(): React.ReactElement {
   const finishSession = useCallback(
     async (finalScore: number, finalTotal: number) => {
       setPhase('end');
+      recordPracticeDay();
 
       // Award XP proportional to score
       const xpEarned = finalScore * 5;
@@ -594,7 +661,7 @@ export default function EarTrainingView(): React.ReactElement {
         backendSessionRef.current = null;
       }
     },
-    [addXP, addPracticeMinutes],
+    [addXP, addPracticeMinutes, recordPracticeDay],
   );
 
   // ── Answer handler ─────────────────────────────────────────────────────────
@@ -646,7 +713,7 @@ export default function EarTrainingView(): React.ReactElement {
 
       // Record backend attempt for scales mode
       if (activeMode === 'scales') {
-        void reportScaleAttempt(isCorrect, metronome.bpm);
+        reportScaleAttempt(isCorrect, metronome.bpm);
       }
 
       // After feedback delay, advance or end session
@@ -693,8 +760,8 @@ export default function EarTrainingView(): React.ReactElement {
   const handlePlay = useCallback(() => {
     if (!currentQuestion) return;
     setIsPlaying(true);
-    currentQuestion.audioToPlay();
-    later(() => setIsPlaying(false), 1200);
+    currentQuestion.audioToPlay(later);
+    later(() => setIsPlaying(false), currentQuestion.durationMs);
   }, [currentQuestion, later]);
 
   // ── Mode change ────────────────────────────────────────────────────────────
@@ -707,6 +774,8 @@ export default function EarTrainingView(): React.ReactElement {
    */
   const handleModeChange = useCallback(
     (value: string) => {
+      // Re-pressing the active exercise type must not throw away the session
+      if (value === activeMode) return;
       const newMode = value as EarMode;
       // Drop pending feedback/auto-play timers from the abandoned session
       clearTimers();
@@ -716,9 +785,12 @@ export default function EarTrainingView(): React.ReactElement {
       if (newMode !== 'sequence') {
         setEarTrainingMode(newMode as 'intervals' | 'notes' | 'scales');
       }
+      setJustLearnedMessage(null);
+      // Focus stays on the mode button the user pressed
+      setFocusStart(false);
       setPhase('start');
     },
-    [setEarTrainingMode, clearTimers],
+    [activeMode, setEarTrainingMode, clearTimers],
   );
 
   // ── Sequence mode start/stop ───────────────────────────────────────────────
@@ -728,9 +800,9 @@ export default function EarTrainingView(): React.ReactElement {
     setSeqScore(0);
     setSeqTotal(0);
     setSequenceIndex(0);
-    setConsecutiveCorrect(0);
     setJustLearnedMessage(null);
     sequenceRunsRef.current = 0;
+    runQualifiesRef.current = true;
     sessionStartTimeRef.current = Date.now();
     setPhase('active');
 
@@ -745,6 +817,7 @@ export default function EarTrainingView(): React.ReactElement {
   /** Ends a sequence mode session. */
   const endSequenceSession = useCallback(async () => {
     setPhase('end');
+    if (seqTotal > 0) recordPracticeDay();
 
     if (sessionStartTimeRef.current) {
       const mins = Math.floor(
@@ -762,7 +835,7 @@ export default function EarTrainingView(): React.ReactElement {
       }
       backendSessionRef.current = null;
     }
-  }, [seqScore, seqTotal, addPracticeMinutes]);
+  }, [seqScore, seqTotal, addPracticeMinutes, recordPracticeDay]);
 
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -799,9 +872,11 @@ export default function EarTrainingView(): React.ReactElement {
             metronomeBpm={metronome.bpm}
             selectedRoot={selectedRoot}
             selectedScale={selectedScale}
+            focusStart={focusStart}
             onStart={startSequenceSession}
             onEnd={endSequenceSession}
             onRestart={() => {
+              setFocusStart(true);
               setPhase('start');
             }}
           />
@@ -820,7 +895,7 @@ export default function EarTrainingView(): React.ReactElement {
       {activeMode !== 'sequence' && (
         <>
           {phase === 'start' && (
-            <StartScreen mode={activeMode} onStart={startQuizSession} />
+            <StartScreen mode={activeMode} autoFocus={focusStart} onStart={startQuizSession} />
           )}
 
           {phase === 'active' && currentQuestion && (
@@ -839,6 +914,7 @@ export default function EarTrainingView(): React.ReactElement {
                     onPlay={handlePlay}
                     isPlaying={isPlaying}
                     canReplay={!isAdvancing}
+                    focusOnMount
                   />
 
                   <AnswerGrid
@@ -866,6 +942,7 @@ export default function EarTrainingView(): React.ReactElement {
               score={earTrainingScore}
               total={TOTAL_QUESTIONS}
               onRetry={() => {
+                setFocusStart(true);
                 setPhase('start');
               }}
             />
@@ -877,6 +954,23 @@ export default function EarTrainingView(): React.ReactElement {
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
+
+/**
+ * Returns a ref that receives focus when the component mounts, if `enabled`
+ * was true at mount. Used where an action unmounts the control the user was
+ * on (Start, End, Try again), so keyboard focus lands on the next control
+ * instead of falling back to <body>.
+ *
+ * @param enabled - Whether to focus on mount (read once).
+ */
+function useFocusOnMount<T extends HTMLElement>(enabled = true) {
+  const ref = useRef<T>(null);
+  const enabledAtMount = useRef(enabled);
+  useEffect(() => {
+    if (enabledAtMount.current) ref.current?.focus();
+  }, []);
+  return ref;
+}
 
 /** Quiz-mode names, used as the start screen's panel title. */
 const MODE_LABELS: Record<string, string> = {
@@ -891,6 +985,8 @@ const MODE_LABELS: Record<string, string> = {
 interface StartScreenProps {
   /** Current ear-training mode. */
   mode: EarMode;
+  /** Focus "Start session" on mount (after "Try again"). */
+  autoFocus?: boolean;
   /** Called when the user taps "Start session". */
   onStart: () => void;
 }
@@ -904,14 +1000,15 @@ interface StartScreenProps {
  * @param props - {@link StartScreenProps}
  * @returns The rendered start screen.
  */
-function StartScreen({ mode, onStart }: StartScreenProps): React.ReactElement {
+function StartScreen({ mode, autoFocus = false, onStart }: StartScreenProps): React.ReactElement {
+  const startRef = useFocusOnMount<HTMLButtonElement>(autoFocus);
   const descriptions: Record<string, string> = {
     intervals:
       'Two notes will be played in sequence. Identify the interval between them by ear.',
     notes:
       'A single note will be played. Identify which pitch you hear from the four options.',
     scales:
-      'The first five notes of a scale will be played. Identify the scale type by ear.',
+      'A scale will be played ascending, from the root up to its octave. Identify the scale type by ear.',
   };
 
   return (
@@ -925,7 +1022,7 @@ function StartScreen({ mode, onStart }: StartScreenProps): React.ReactElement {
             <span className="font-mono">{TOTAL_QUESTIONS}</span> questions per session
           </p>
         </div>
-        <Button variant="ink" size="lg" onClick={onStart}>
+        <Button ref={startRef} variant="ink" size="lg" onClick={onStart}>
           Start session
         </Button>
       </div>
@@ -959,6 +1056,8 @@ function EndScreen({
   onRetry,
 }: EndScreenProps): React.ReactElement {
   const pct = total > 0 ? Math.round((score / total) * 100) : 0;
+  // The last answer card just unmounted; land on the next action
+  const retryRef = useFocusOnMount<HTMLButtonElement>();
 
   const message =
     pct >= 80
@@ -982,7 +1081,7 @@ function EndScreen({
           </p>
           <p className="mt-2 text-[13px] text-muted">{message}</p>
         </div>
-        <Button variant="ink" size="lg" onClick={onRetry}>
+        <Button ref={retryRef} variant="ink" size="lg" onClick={onRetry}>
           Try again
         </Button>
       </div>
@@ -1004,7 +1103,7 @@ interface SequenceSectionProps {
   score: number;
   /** Total note clicks so far. */
   total: number;
-  /** Backend mastery consecutive-correct count. */
+  /** Local mastery: consecutive clean runs at >= 120 BPM (from the store). */
   consecutiveCorrect: number;
   /** Non-null while showing a "just learned" celebration message. */
   justLearnedMessage: string | null;
@@ -1014,6 +1113,8 @@ interface SequenceSectionProps {
   selectedRoot: string;
   /** Currently selected scale key. */
   selectedScale: string;
+  /** Focus "Start practice" on mount (after "Try again"). */
+  focusStart: boolean;
   /** Starts a new sequence session. */
   onStart: () => void;
   /** Ends the active sequence session. */
@@ -1027,8 +1128,8 @@ interface SequenceSectionProps {
  *
  * The Sequence exercise lifted from PracticeMode.tsx. The user plays scale
  * notes in order by selecting them on the fretboard (rendered by the parent
- * below this card). Mastery is tracked at 3 consecutive correct runs at
- * ≥ 120 BPM via the backend.
+ * below this card). Mastery is 3 consecutive clean runs at >= 120 BPM,
+ * tracked locally in the store.
  *
  * @param props - {@link SequenceSectionProps}
  * @returns The rendered sequence exercise section.
@@ -1044,47 +1145,97 @@ function SequenceSection({
   metronomeBpm,
   selectedRoot,
   selectedScale,
+  focusStart,
   onStart,
   onEnd,
   onRestart,
 }: SequenceSectionProps): React.ReactElement {
   if (phase === 'start') {
-    return (
-      <Panel title="Sequence practice" headingLevel={3}>
-        <div className="flex flex-col items-start gap-4">
-          <p className="max-w-[52ch] text-sm leading-relaxed text-ink">
-            Play the scale notes in order on the fretboard, which appears once you start.
-            Achieve 3 correct runs at 120 BPM to mark the scale as learned.
-          </p>
-          <Button variant="ink" size="lg" onClick={onStart}>
-            Start practice
-          </Button>
-        </div>
-      </Panel>
-    );
+    return <SequenceStart autoFocus={focusStart} onStart={onStart} />;
   }
 
   if (phase === 'end') {
-    return (
-      <Panel title="Session ended" headingLevel={3}>
-        <div className="flex flex-col items-start gap-4">
-          <p className="text-sm text-muted">
-            Score:{' '}
-            <span className="tabular font-mono text-ink">
-              {score} / {total}
-            </span>
-          </p>
-          <Button variant="ink" size="lg" onClick={onRestart}>
-            Try again
-          </Button>
-        </div>
-      </Panel>
-    );
+    return <SequenceEnd score={score} total={total} onRestart={onRestart} />;
   }
+
+  return (
+    <SequenceActive
+      scaleNotes={scaleNotes}
+      sequenceIndex={sequenceIndex}
+      score={score}
+      total={total}
+      consecutiveCorrect={consecutiveCorrect}
+      justLearnedMessage={justLearnedMessage}
+      metronomeBpm={metronomeBpm}
+      selectedRoot={selectedRoot}
+      selectedScale={selectedScale}
+      onEnd={onEnd}
+    />
+  );
+}
+
+/** Sequence start card. Takes focus after "Try again". */
+function SequenceStart({ autoFocus, onStart }: { autoFocus: boolean; onStart: () => void }): React.ReactElement {
+  const startRef = useFocusOnMount<HTMLButtonElement>(autoFocus);
+  return (
+    <Panel title="Sequence practice" headingLevel={3}>
+      <div className="flex flex-col items-start gap-4">
+        <p className="max-w-[52ch] text-sm leading-relaxed text-ink">
+          Play the scale notes in order on the fretboard, which appears once you start.
+          Achieve {MASTERY_RUNS} clean runs in a row at {MASTERY_BPM} BPM to mark the scale as learned.
+        </p>
+        <Button ref={startRef} variant="ink" size="lg" onClick={onStart}>
+          Start practice
+        </Button>
+      </div>
+    </Panel>
+  );
+}
+
+/** Sequence end card. "End" just unmounted, so "Try again" takes focus. */
+function SequenceEnd({ score, total, onRestart }: { score: number; total: number; onRestart: () => void }): React.ReactElement {
+  const retryRef = useFocusOnMount<HTMLButtonElement>();
+  return (
+    <Panel title="Session ended" headingLevel={3}>
+      <div className="flex flex-col items-start gap-4">
+        <p className="text-sm text-muted">
+          Score:{' '}
+          <span className="tabular font-mono text-ink">
+            {score} / {total}
+          </span>
+        </p>
+        <Button ref={retryRef} variant="ink" size="lg" onClick={onRestart}>
+          Try again
+        </Button>
+      </div>
+    </Panel>
+  );
+}
+
+/** Props for the active sequence card. */
+type SequenceActiveProps = Omit<SequenceSectionProps, 'phase' | 'focusStart' | 'onStart' | 'onRestart'>;
+
+/**
+ * The running sequence exercise. "Start practice" just unmounted, so the
+ * target-note readout takes focus (it reads the note to play next).
+ */
+function SequenceActive({
+  scaleNotes,
+  sequenceIndex,
+  score,
+  total,
+  consecutiveCorrect,
+  justLearnedMessage,
+  metronomeBpm,
+  selectedRoot,
+  selectedScale,
+  onEnd,
+}: SequenceActiveProps): React.ReactElement {
+  const targetRef = useFocusOnMount<HTMLDivElement>();
 
   // Active phase
   const posInScale = sequenceIndex % (scaleNotes.length || 1);
-  const masteryPct = Math.min((consecutiveCorrect / 3) * 100, 100);
+  const masteryPct = Math.min((consecutiveCorrect / MASTERY_RUNS) * 100, 100);
 
   return (
     <Panel
@@ -1108,7 +1259,7 @@ function SequenceSection({
         {justLearnedMessage && <Notice tone="success">{justLearnedMessage}</Notice>}
 
         {/* Current target note */}
-        <div className="rounded-control bg-sunken px-4 py-5 text-center">
+        <div ref={targetRef} tabIndex={-1} className="rounded-control bg-sunken px-4 py-5 text-center">
           <p className="text-xs text-muted">Play the next note in the sequence:</p>
           <p className="mt-2 text-[44px] leading-none font-extrabold tracking-[-0.02em] text-ink">
             {scaleNotes[posInScale] ?? '—'}
@@ -1119,7 +1270,8 @@ function SequenceSection({
           </p>
         </div>
 
-        {/* Scale notes: done in ink, current in the accent, upcoming outlined */}
+        {/* Scale notes: done outlined in ink, next-to-play ink-filled with a
+            ring, upcoming hairline. Orange is kept for sounding notes. */}
         <ol aria-label="Scale notes" className="flex flex-wrap justify-center gap-1.5">
           {scaleNotes.map((note, i) => (
             <li
@@ -1128,9 +1280,9 @@ function SequenceSection({
               className={cn(
                 'inline-flex h-7 min-w-8 items-center justify-center rounded-full border px-2.5 text-xs font-bold transition-colors duration-150',
                 i === posInScale
-                  ? 'border-accent bg-accent text-on-accent'
+                  ? 'border-ink bg-ink text-surface ring-2 ring-ink ring-offset-2 ring-offset-surface'
                   : i < posInScale
-                    ? 'border-ink bg-ink text-surface'
+                    ? 'border-ink bg-surface text-ink'
                     : 'border-line-strong bg-surface text-muted',
               )}
             >
@@ -1146,20 +1298,20 @@ function SequenceSection({
               Mastery: {selectedRoot} {SCALES[selectedScale]?.name ?? selectedScale}
             </span>
             <span className="tabular font-mono text-ink">
-              {consecutiveCorrect}/3 at {metronomeBpm} BPM
+              {consecutiveCorrect}/{MASTERY_RUNS} at {metronomeBpm} BPM
             </span>
           </div>
           <div aria-hidden="true" className="h-1 overflow-hidden rounded-full bg-line">
             <div
               className={cn(
                 'h-full rounded-full transition-[width] duration-[400ms] ease-out',
-                consecutiveCorrect >= 3 ? 'bg-correct' : 'bg-ink',
+                consecutiveCorrect >= MASTERY_RUNS ? 'bg-correct' : 'bg-ink',
               )}
               style={{ width: `${masteryPct}%` }}
             />
           </div>
-          {metronomeBpm < 120 && (
-            <p className="text-xs text-muted">Set metronome to 120 BPM to earn mastery</p>
+          {metronomeBpm < MASTERY_BPM && (
+            <p className="text-xs text-muted">Set metronome to {MASTERY_BPM} BPM to earn mastery</p>
           )}
         </div>
 

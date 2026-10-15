@@ -9,15 +9,17 @@
 import { useGuitarStore } from '../store/useGuitarStore';
 import type { PlaybackDirection } from '../store/useGuitarStore';
 import { audioEngine } from '../audio/AudioEngine';
-import { ALL_NOTES, SCALES } from '../data/musicTheory';
+import { ALL_NOTES, SCALES, spellScale } from '../data/musicTheory';
 import { useScalePattern } from '../practice/useScalePattern';
 import type { TabNote } from '../practice/scalePattern';
 import { Panel, SegmentedControl, cn } from '../ui';
 
+// The visible label is the accessible name (WCAG 2.5.3 label in name), so no
+// ariaLabel override; the group is already named "Playback direction".
 const DIRECTIONS = [
-  { value: 'ascending', label: 'Up' , ariaLabel: 'Ascending' },
-  { value: 'descending', label: 'Down', ariaLabel: 'Descending' },
-  { value: 'both', label: 'Up & down', ariaLabel: 'Ascending then descending' },
+  { value: 'ascending', label: 'Up' },
+  { value: 'descending', label: 'Down' },
+  { value: 'both', label: 'Up & down' },
 ] as const;
 
 export default function Tablature() {
@@ -113,7 +115,7 @@ export default function Tablature() {
         </span>
         <span>Select a fret number to hear it</span>
         <span className="ml-auto">
-          {selectedRoot} {scale.name}
+          {spellScale(selectedRoot, selectedScale)[0] ?? selectedRoot} {scale.name}
         </span>
       </div>
     </Panel>

@@ -56,7 +56,17 @@ export function SoundPanel({ anchorRef }: { anchorRef: React.RefObject<HTMLButto
     >
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-[15px] font-bold">Sound</h2>
-        <Button variant="ghost" size="sm" iconOnly icon={X} aria-label="Close sound settings" onClick={() => setOpen(false)} />
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
+          icon={X}
+          aria-label="Close sound settings"
+          onClick={() => {
+            setOpen(false);
+            anchorRef.current?.focus(); // the panel unmounts; don't strand focus on <body>
+          }}
+        />
       </div>
       <div className="flex flex-col gap-4">
         <Slider

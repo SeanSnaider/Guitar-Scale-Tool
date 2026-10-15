@@ -35,11 +35,18 @@ function findLowestRoot(rootNote: string, tuning: number[], maxFret = 12) {
  * Three notes per string, low string to high, starting at the lowest root.
  * Returned in ascending playing order.
  */
-export function buildAscendingPattern(rootNote: string, intervals: number[], tuning: number[]): TabNote[] {
+export function buildAscendingPattern(
+  rootNote: string,
+  intervals: number[],
+  tuning: number[],
+  /** Highest fret drawn on the board; the pattern never goes past it. */
+  boardFrets = 24,
+): TabNote[] {
   const scaleNotes = getScaleNotes(rootNote, intervals);
   const lowestRoot = findLowestRoot(rootNote, tuning);
   const startFret = lowestRoot ? lowestRoot.fret : 0;
-  const maxFret = startFret + 15;
+  // Stay on the drawn board, so the playing ring never leaves the fretboard
+  const maxFret = Math.min(startFret + 15, boardFrets);
   const pattern: TabNote[] = [];
 
   for (let stringIdx = 0; stringIdx < tuning.length; stringIdx++) {

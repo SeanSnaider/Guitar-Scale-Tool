@@ -5,6 +5,10 @@
  * Cards are tappable until an answer is submitted; once answered, the correct
  * card turns green with a check, the selected wrong card turns red with a
  * cross, and all other cards are dimmed.
+ *
+ * Locked cards use aria-disabled (not the disabled attribute) so the card the
+ * user just activated keeps keyboard focus through the feedback delay; the
+ * parent then moves focus to the next question's play button.
  */
 
 import React from 'react';
@@ -40,7 +44,7 @@ export interface AnswerGridProps {
   /** The option value the user selected, or null if unanswered. */
   selectedAnswer: string | null;
   /**
-   * When true, all cards are non-interactive.
+   * When true, all cards are non-interactive (aria-disabled; clicks ignored).
    * Set to true after the user answers and during the advance delay.
    */
   disabled: boolean;
@@ -85,18 +89,18 @@ export default function AnswerGrid({
             onClick={() => {
               if (!disabled) onAnswer(option.value);
             }}
-            disabled={disabled}
+            aria-disabled={disabled || undefined}
             aria-label={`${option.label}${option.subtitle ? `, ${option.subtitle}` : ''}`}
             aria-pressed={isSelected}
             className={cn(
               'relative flex min-h-16 flex-col items-center justify-center gap-1 rounded-control border px-3 py-3.5 text-center',
               'transition-[background-color,border-color,opacity] duration-300',
-              'disabled:cursor-default',
+              'aria-disabled:cursor-default',
               showCorrect
                 ? 'border-correct bg-correct-soft'
                 : showWrong
                   ? 'border-incorrect bg-incorrect-soft'
-                  : 'border-line bg-surface enabled:hover:border-control',
+                  : 'border-line bg-surface [&:not([aria-disabled=true]):hover]:border-control',
               answered && !showCorrect && !showWrong && 'opacity-50',
             )}
           >

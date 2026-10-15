@@ -227,3 +227,26 @@ class TestChordStats:
         assert "major" in quality_map
         assert quality_map["major"]["count"] == 1
         assert abs(quality_map["major"]["avg_confidence"] - 0.9) < 0.01
+
+
+class TestChordValidation:
+    """Pagination and string-length bounds on /chords."""
+
+    async def test_pagination_bounds(self, client):
+        for query in ("page=0", "limit=0", "limit=101"):
+            assert (await client.get(f"/chords?{query}")).status_code == 422, query
+
+    async def test_string_lengths(self, client):
+        base = {"chord": "C", "confidence": 0.5, "root": "C", "quality": "major"}
+        for field in ("chord", "root", "quality"):
+            for bad in ("", "x" * 65):
+                response = await client.post("/chords", json={**base, field: bad})
+                assert response.status_code == 422, (field, len(bad))
+
+    async def test_detected_at_is_utc(self, client):
+        await client.post(
+            "/chords",
+            json={"chord": "C", "confidence": 0.5, "root": "C", "quality": "major"},
+        )
+        row = (await client.get("/chords")).json()["data"][0]
+        assert row["detected_at"].endswith(("Z", "+00:00"))

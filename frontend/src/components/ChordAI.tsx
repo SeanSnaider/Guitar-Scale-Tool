@@ -11,13 +11,22 @@
  * The API key panel is setup, not the task, so it sits last once a key is set
  * and first while one is still needed.
  *
+ * Focus: controls that swap out or lock while busy hand focus to the next
+ * logical target (Listen returns after detection, the follow-up field after
+ * a reply, Clear/the key field after setting/clearing the key). Controls that
+ * can hold focus while busy use aria-disabled plus a guard, not `disabled`,
+ * which would drop focus to <body>.
+ *
  * Props: none — this component is fully self-contained.
  */
 
-import { useId } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import { Mic } from 'lucide-react';
 import { useChordAI, GENRES } from '../hooks/useChordAI';
 import { Button, Chip, Notice, Panel, Select, TextField, cn, PageTitle } from '../ui';
+
+/** Dims an aria-disabled Button the way `disabled` would, without losing focus. */
+const BUSY_CLASS = 'aria-disabled:cursor-not-allowed aria-disabled:opacity-45';
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -47,17 +56,33 @@ interface ApiKeyPanelProps {
  * or an "active" line when the key has been provided.
  * The key is stored in memory only — never persisted to disk or localStorage.
  *
+ * Setting the key unmounts the form, so focus moves to the active line's
+ * Clear button; clearing moves it back to the key field.
+ *
  * @param props - API key state and handlers from the useChordAI hook.
  */
 function ApiKeyPanel({
   apiKeyInput, showApiKey, apiKeySet,
   onInputChange, onToggleShow, onSetKey, onClearKey, onKeyDown,
 }: ApiKeyPanelProps) {
+  const keyFieldRef = useRef<HTMLInputElement>(null);
+  const clearRef = useRef<HTMLButtonElement>(null);
+  const prevKeySet = useRef(apiKeySet);
+
+  useEffect(() => {
+    // Only on a change (a user set/clear), never on mount
+    if (prevKeySet.current === apiKeySet) return;
+    prevKeySet.current = apiKeySet;
+    if (apiKeySet) clearRef.current?.focus();
+    else keyFieldRef.current?.focus();
+  }, [apiKeySet]);
+
   return (
     <Panel title="Anthropic API key" headingLevel={3}>
       {!apiKeySet ? (
         <div className="flex items-start gap-2">
           <TextField
+            ref={keyFieldRef}
             className="flex-1"
             label="Anthropic API key"
             hideLabel
@@ -88,7 +113,7 @@ function ApiKeyPanel({
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-[13px] text-muted">Key active for this session</p>
-          <Button variant="ghost" size="sm" onClick={onClearKey}>
+          <Button ref={clearRef} variant="ghost" size="sm" onClick={onClearKey}>
             Clear
           </Button>
         </div>
@@ -129,6 +154,45 @@ export default function ChordAI() {
   const listenError = error && errorScope === 'listen' ? error : null;
   const apiError = error && errorScope !== 'listen' ? error : null;
   const progress = Math.round(listeningProgress);
+
+  // ── Focus handoff ──
+  const listenRef = useRef<HTMLButtonElement>(null);
+  const followUpRef = useRef<HTMLInputElement>(null);
+  const wasListening = useRef(isListening);
+  const wasGenerating = useRef(isGenerating);
+  /** Set when a follow-up is sent, so its reply returns focus to the field. */
+  const followUpPending = useRef(false);
+
+  // The Listen button is swapped for the progress bar while recording; bring
+  // focus back to it once detection completes.
+  useEffect(() => {
+    if (wasListening.current && !isListening) listenRef.current?.focus();
+    wasListening.current = isListening;
+  }, [isListening]);
+
+  // After a follow-up reply (or failure), put the user back in the field.
+  useEffect(() => {
+    if (wasGenerating.current && !isGenerating && followUpPending.current) {
+      followUpPending.current = false;
+      followUpRef.current?.focus();
+    }
+    wasGenerating.current = isGenerating;
+  }, [isGenerating]);
+
+  const canSendFollowUp = inputMessage.trim() !== '' && !isGenerating;
+
+  /** Sends the follow-up; guarded because the controls are aria-disabled, not disabled. */
+  const sendFollowUp = () => {
+    if (!canSendFollowUp) return;
+    followUpPending.current = true;
+    void handleSendMessage();
+  };
+
+  /** Generate stays focusable while generating (aria-disabled), so guard here. */
+  const generate = () => {
+    if (!canGenerate) return;
+    void handleGenerate();
+  };
 
   const keyPanel = (
     <ApiKeyPanel
@@ -192,6 +256,10 @@ export default function ChordAI() {
                       {Math.round(detectedChord.confidence * 100)}% match
                     </span>
                   </div>
+                  {/* Below the detector's confidence floor the best template is little better than noise */}
+                  {!detectedChord.confident && (
+                    <p className="text-[13px] text-muted">Weak match. Strum again and let the chord ring.</p>
+                  )}
                 </>
               ) : (
                 <p className="text-[15px] text-muted">{isListening ? 'Listening…' : 'No chord yet'}</p>
@@ -221,7 +289,7 @@ export default function ChordAI() {
                   </div>
                 </div>
               ) : (
-                <Button variant="ink" size="xl" icon={Mic} onClick={handleListen} className="max-sm:w-full">
+                <Button ref={listenRef} variant="ink" size="xl" icon={Mic} onClick={handleListen} className="max-sm:w-full">
                   Listen for 2.5 seconds
                 </Button>
               )}
@@ -273,9 +341,13 @@ export default function ChordAI() {
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <Button
               variant="ink"
-              onClick={handleGenerate}
-              disabled={!canGenerate}
+              onClick={generate}
+              // Truly unavailable (no key / no chord): disabled. Busy: stays
+              // focusable so focus isn't dropped mid-request.
+              disabled={!apiKeySet || !detectedChord}
+              aria-disabled={isGenerating || undefined}
               aria-busy={isGenerating}
+              className={BUSY_CLASS}
               title={
                 !apiKeySet
                   ? 'Set your API key first'
@@ -389,20 +461,24 @@ export default function ChordAI() {
 
             <div className="flex items-start gap-2 border-t border-line pt-4">
               <TextField
-                className="flex-1"
+                ref={followUpRef}
+                className="flex-1 [&_input[aria-disabled=true]]:opacity-50"
                 label="Follow-up message to Claude"
                 hideLabel
                 type="text"
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
+                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendFollowUp()}
                 placeholder='Try "make it darker" or "add a turnaround"...'
-                disabled={isGenerating}
+                // Locked while sending but still focusable (keeps the user's place)
+                readOnly={isGenerating}
+                aria-disabled={isGenerating || undefined}
               />
               <Button
                 variant="ink"
-                onClick={handleSendMessage}
-                disabled={!inputMessage.trim() || isGenerating}
+                onClick={sendFollowUp}
+                aria-disabled={!canSendFollowUp || undefined}
+                className={BUSY_CLASS}
               >
                 Send
               </Button>

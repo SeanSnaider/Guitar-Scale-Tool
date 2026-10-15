@@ -10,7 +10,8 @@ import { useId, useMemo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { useGuitarStore } from '../../store/useGuitarStore';
 import type { DisplayMode, PositionSystem } from '../../store/useGuitarStore';
-import { ALL_NOTES, SCALES, TUNINGS } from '../../data/musicTheory';
+import { ALL_NOTES, ENHARMONIC_MAP, SCALES, TUNINGS, spellScale } from '../../data/musicTheory';
+import { positionCount } from '../../practice/positions';
 import { SegmentedControl, Select, Switch, cn } from '../../ui';
 
 const DISPLAY_MODES = [
@@ -22,10 +23,12 @@ const DISPLAY_MODES = [
 
 const POSITION_SYSTEMS = [
   { value: 'caged', label: 'CAGED' },
-  { value: '3nps', label: '3NPS', ariaLabel: 'Three notes per string' },
+  // Name starts with the visible text so voice control ("click 3NPS") works
+  { value: '3nps', label: '3NPS', ariaLabel: '3NPS, three notes per string' },
 ] as const;
 
-const ROOT_OPTIONS = ALL_NOTES.map((n) => ({ value: n, label: n }));
+/** Roots are stored as sharp names; show both spellings for the black keys ("A# / Bb"). */
+const ROOT_OPTIONS = ALL_NOTES.map((n) => ({ value: n, label: ENHARMONIC_MAP[n] ? `${n} / ${ENHARMONIC_MAP[n]}` : n }));
 
 const SCALE_OPTIONS = Object.entries(SCALES).map(([key, scale]) => ({
   value: key,
@@ -63,10 +66,11 @@ export default function FretboardControls() {
     [currentTuning],
   );
 
-  const positionCount = positionSystem === 'caged' ? 5 : 7;
+  // CAGED has five shapes; 3NPS has one pattern per scale degree
+  const count = positionCount(positionSystem, SCALES[selectedScale]?.intervals ?? []);
   const positionOptions = [
     { value: 'all', label: 'All', ariaLabel: 'All positions' },
-    ...Array.from({ length: positionCount }, (_, i) => ({
+    ...Array.from({ length: count }, (_, i) => ({
       value: String(i + 1),
       label: String(i + 1),
       ariaLabel: `Position ${i + 1}`,
@@ -78,7 +82,7 @@ export default function FretboardControls() {
   const [open, setOpen] = useState(false);
   const controlsId = useId();
   const tuningName = TUNINGS[currentTuningKey]?.name ?? currentTuning.name;
-  const summary = `${selectedRoot} ${SCALES[selectedScale]?.name ?? selectedScale} · ${tuningName} · ${
+  const summary = `${spellScale(selectedRoot, selectedScale)[0] ?? selectedRoot} ${SCALES[selectedScale]?.name ?? selectedScale} · ${tuningName} · ${
     DISPLAY_MODES.find((m) => m.value === displayMode)?.label ?? displayMode
   }`;
 
@@ -152,7 +156,7 @@ export default function FretboardControls() {
             <SegmentedControl
               ariaLabel="Position"
               options={positionOptions}
-              value={selectedPosition === null ? 'all' : String(selectedPosition)}
+              value={selectedPosition === null ? 'all' : selectedPosition <= count ? String(selectedPosition) : null}
               onChange={(v) => setSelectedPosition(v === 'all' ? null : Number(v))}
             />
           </div>

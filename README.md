@@ -204,7 +204,7 @@ directly.
 |---|---|---|
 | `frontend` | `VITE_API_URL` | `http://localhost:8000` |
 | `backend/.env` | `DATABASE_URL` | `sqlite+aiosqlite:///./guitar_learning.db` |
-| `backend/.env` | `CORS_ORIGINS` | `http://localhost:5173` |
+| `backend/.env` | `CORS_ORIGINS` (comma-separated or JSON list) | `http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173` |
 | `agent-server/.env` | `SUBCONSCIOUS_API_KEY` | none — required |
 | `agent-server/.env` | `PORT` / `CORS_ORIGIN` / `TOOL_BASE_URL` | `3001` / `http://localhost:5173` / `http://localhost:3001` |
 

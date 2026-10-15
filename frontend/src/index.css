@@ -147,7 +147,7 @@
   font-weight: 700;
   transform: translateY(calc(-100% - 16px));
 }
-.skip-link:focus-visible { transform: none; outline-color: var(--color-accent); }
+.skip-link:focus-visible { transform: none; outline-color: var(--color-ink); }
 
 /* Expands a small fretboard note's tap area without changing its drawn size */
 .note-hit { position: relative; }

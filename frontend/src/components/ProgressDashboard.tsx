@@ -12,11 +12,12 @@
  *   setActiveTab)
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import { RotateCcw } from 'lucide-react';
 import { useGuitarStore } from '../store/useGuitarStore';
-import { SCALES, SCALE_CATEGORIES, type ScaleCategory } from '../data/musicTheory';
+import { effectiveStreak, parseLearnedScaleKey } from '../store/progress';
+import { SCALES, SCALE_CATEGORIES, spellScale, type ScaleCategory } from '../data/musicTheory';
 import {
   listSessions,
   listChords,
@@ -227,15 +228,22 @@ export default function ProgressDashboard() {
   // ---- Local store ----
   const userStats = useGuitarStore((s) => s.userStats);
   const learnedScales = useGuitarStore((s) => s.learnedScales);
+  const sequenceMastery = useGuitarStore((s) => s.sequenceMastery);
   const setSelectedScale = useGuitarStore((s) => s.setSelectedScale);
+  const setSelectedRoot = useGuitarStore((s) => s.setSelectedRoot);
   const setActiveTab = useGuitarStore((s) => s.setActiveTab);
 
   // ---- Local UI state ----
   const [activeTab, setDashTab] = useState<DashTab>('overview');
   const [learnedCategoryFilter, setLearnedCategoryFilter] = useState<ScaleCategory | 'all'>('all');
 
+  /** Mirrors `loading` so a re-entrant Refresh can be ignored synchronously. */
+  const loadingRef = useRef(false);
+
   /** Fetch all remote data in parallel. */
   const fetchAll = useCallback(async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     setError(null);
     try {
@@ -255,6 +263,7 @@ export default function ProgressDashboard() {
       const msg = err instanceof Error ? err.message : 'Failed to load progress data';
       setError(msg);
     } finally {
+      loadingRef.current = false;
       setLoading(false);
     }
   }, []);
@@ -264,30 +273,72 @@ export default function ProgressDashboard() {
   }, [fetchAll]);
 
   /**
-   * Loads a scale onto the fretboard and switches to the Fretboard tab.
+   * Loads a learned scale (root and scale) onto the fretboard and switches
+   * to the Fretboard tab.
    *
+   * @param root     - The scale's root note.
    * @param scaleKey - The SCALES registry key to activate.
    */
-  const handlePracticeScale = (scaleKey: string) => {
+  const handlePracticeScale = (root: string, scaleKey: string) => {
+    setSelectedRoot(root);
     setSelectedScale(scaleKey);
     setActiveTab('fretboard');
   };
 
   // ---- Derived: learned scale entries from the local store Set ----
-  const learnedScaleEntries = Array.from(learnedScales).map((key) => {
-    // Key format: "root-scaleKey-position" e.g. "C-major-1"
-    const parts = key.split('-');
-    const root = parts[0] ?? '';
-    const scaleKey = parts.slice(1, -1).join('-');
-    const position = parts[parts.length - 1] ?? '';
-    const scaleData = SCALES[scaleKey];
-    return { storeKey: key, root, scaleKey, position, scaleData };
-  }).filter((e) => e.scaleData !== undefined);
+  // Keys are learnedScaleKey(root, scaleKey) ("C-major"); legacy keys carry a
+  // trailing position ("C-major-1"). parseLearnedScaleKey handles both.
+  const learnedScaleEntries = Array.from(learnedScales).flatMap((key) => {
+    const parsed = parseLearnedScaleKey(key);
+    const scaleData = parsed ? SCALES[parsed.scaleKey] : undefined;
+    if (!parsed || !scaleData) return [];
+    return [{ storeKey: key, root: parsed.root, scaleKey: parsed.scaleKey, position: parsed.position, scaleData }];
+  });
+
+  const streak = effectiveStreak(userStats);
 
   const filteredLearnedScales =
     learnedCategoryFilter === 'all'
       ? learnedScaleEntries
       : learnedScaleEntries.filter((e) => e.scaleData?.category === learnedCategoryFilter);
+
+  /**
+   * Mastery rows: this browser's Sequence progress first (the source of
+   * truth, works without the server), then any server rows for other scales.
+   */
+  const scaleLabel = (key: string) => {
+    const parsed = parseLearnedScaleKey(key);
+    const scale = parsed ? SCALES[parsed.scaleKey] : undefined;
+    return parsed && scale ? `${spellScale(parsed.root, parsed.scaleKey)[0] ?? parsed.root} ${scale.name}` : key;
+  };
+  const localKeys = new Set([...Object.keys(sequenceMastery), ...learnedScales]);
+  const masteryRows: Array<{
+    id: string;
+    label: string;
+    is_learned: boolean;
+    consecutive_correct: number;
+    total_attempts: number | null;
+    learned_at: string | null;
+  }> = [
+    ...[...localKeys].map((key) => ({
+      id: `local-${key}`,
+      label: scaleLabel(key),
+      is_learned: learnedScales.has(key),
+      consecutive_correct: Math.min(3, sequenceMastery[key] ?? 0),
+      total_attempts: null,
+      learned_at: null,
+    })),
+    ...mastery
+      .filter((m) => !localKeys.has(m.scale_key))
+      .map((m) => ({
+        id: String(m.id),
+        label: scaleLabel(m.scale_key),
+        is_learned: m.is_learned,
+        consecutive_correct: m.consecutive_correct,
+        total_attempts: m.total_attempts,
+        learned_at: m.learned_at,
+      })),
+  ];
 
   return (
     <div className="flex flex-col gap-5">
@@ -297,9 +348,11 @@ export default function ProgressDashboard() {
           variant="ghost"
           size="sm"
           icon={RotateCcw}
-          onClick={fetchAll}
-          disabled={loading}
+          // aria-disabled, not disabled: the button keeps focus while it loads
+          onClick={() => void fetchAll()}
+          aria-disabled={loading || undefined}
           aria-busy={loading}
+          className="aria-disabled:cursor-not-allowed aria-disabled:opacity-45"
         >
           {loading ? 'Refreshing…' : 'Refresh'}
         </Button>
@@ -343,7 +396,7 @@ export default function ProgressDashboard() {
                   label="Current streak"
                   value={
                     <>
-                      {userStats.currentStreak}
+                      {streak}
                       <Unit>d</Unit>
                     </>
                   }
@@ -354,7 +407,7 @@ export default function ProgressDashboard() {
 
               {backendStats && (
                 <>
-                  <Panel title="Backend stats">
+                  <Panel title="Synced history">
                     <dl className="flex flex-wrap gap-x-8 gap-y-2 text-[13px]">
                       <div className="flex items-baseline gap-2">
                         <dt className="text-muted">Sessions</dt>
@@ -405,7 +458,7 @@ export default function ProgressDashboard() {
               {filteredLearnedScales.length === 0 ? (
                 <EmptyPanel>
                   {learnedScaleEntries.length === 0
-                    ? 'No scales marked as learned yet. Use the Practice tab to mark scales as learned.'
+                    ? 'No learned scales yet. A scale is learned after 3 clean runs in a row in Sequence practice (Ear training) at 120 BPM.'
                     : 'No learned scales in this category.'}
                 </EmptyPanel>
               ) : (
@@ -422,14 +475,18 @@ export default function ProgressDashboard() {
                             <div className="min-w-0">
                               <div className="text-sm font-bold">{name}</div>
                               <div className="mt-0.5 text-xs text-muted">
-                                Position <span className="tabular font-mono">{entry.position}</span> ·{' '}
+                                {entry.position != null && (
+                                  <>
+                                    Position <span className="tabular font-mono">{entry.position}</span> ·{' '}
+                                  </>
+                                )}
                                 {entry.scaleData?.category ?? 'unknown'}
                               </div>
                             </div>
                             <Button
                               size="sm"
                               aria-label={`Practice ${name}`}
-                              onClick={() => handlePracticeScale(entry.scaleKey)}
+                              onClick={() => handlePracticeScale(entry.root, entry.scaleKey)}
                             >
                               Practice
                             </Button>
@@ -555,17 +612,17 @@ export default function ProgressDashboard() {
 
           {/* ── Scale mastery (backend) ── */}
           {activeTab === 'scales' &&
-            (mastery.length === 0 ? (
+            (masteryRows.length === 0 ? (
               <EmptyPanel>
                 No scales practiced yet. Complete the sequence exercise at 120 BPM to start tracking mastery.
               </EmptyPanel>
             ) : (
               <Panel title="Scale mastery" flush>
                 <ul className="border-t border-line">
-                  {mastery.map((m) => (
+                  {masteryRows.map((m) => (
                     <li key={m.id} className="border-b border-line px-5 py-3.5 last:border-b-0">
                       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                        <span className="text-sm font-bold break-all">{m.scale_key}</span>
+                        <span className="text-sm font-bold break-all">{m.label}</span>
                         {m.is_learned ? (
                           <span className="rounded-full bg-correct-soft px-2 py-0.5 text-xs font-bold text-correct">
                             Learned
@@ -578,9 +635,11 @@ export default function ProgressDashboard() {
                       </div>
 
                       <div className="mt-1 flex flex-wrap gap-x-4 text-xs text-muted">
-                        <span>
-                          <span className="tabular font-mono">{m.total_attempts}</span> attempts
-                        </span>
+                        {m.total_attempts !== null && (
+                          <span>
+                            <span className="tabular font-mono">{m.total_attempts}</span> attempts
+                          </span>
+                        )}
                         {m.learned_at && (
                           <span>
                             Learned <span className="tabular font-mono">{formatDate(m.learned_at)}</span>

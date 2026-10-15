@@ -8,7 +8,7 @@
  * Keeping logic here keeps ChordAI.tsx focused on rendering only.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChordDetector } from '../audio/ChordDetector';
 import type { ChordDetectionResult } from '../audio/ChordDetector';
 import { recordChord } from '../services/api';
@@ -238,18 +238,19 @@ export function useChordAI(): ChordAIState {
   const requestRef = useRef<AbortController | null>(null);
 
   // ── Enumerate audio devices on mount ────────────────────────────────────
+  /** Re-reads the input list. Labels and ids only appear once mic permission is granted. */
+  const refreshDevices = useCallback(async () => {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const inputs = devices.filter(d => d.kind === 'audioinput');
+    setAudioDevices(inputs);
+    // Keep the current pick if it's still plugged in, else fall back to the first
+    setSelectedDevice(prev =>
+      inputs.some(d => d.deviceId === prev) ? prev : inputs[0]?.deviceId ?? ''
+    );
+  }, []);
+
   useEffect(() => {
     if (!navigator.mediaDevices?.getUserMedia) return;
-
-    const refreshDevices = async () => {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const inputs = devices.filter(d => d.kind === 'audioinput');
-      setAudioDevices(inputs);
-      // Keep the current pick if it's still plugged in, else fall back to the first
-      setSelectedDevice(prev =>
-        inputs.some(d => d.deviceId === prev) ? prev : inputs[0]?.deviceId ?? ''
-      );
-    };
 
     const getDevices = async () => {
       try {
@@ -270,7 +271,7 @@ export function useChordAI(): ChordAIState {
     const onDeviceChange = () => { void refreshDevices().catch(() => {}); };
     navigator.mediaDevices.addEventListener?.('devicechange', onDeviceChange);
     return () => navigator.mediaDevices.removeEventListener?.('devicechange', onDeviceChange);
-  }, []);
+  }, [refreshDevices]);
 
   // ── Scroll to bottom when messages change ────────────────────────────────
   useEffect(() => {
@@ -328,6 +329,13 @@ export function useChordAI(): ChordAIState {
 
     let stream: MediaStream | null = null;
     let audioCtx: AudioContext | null = null;
+    // iOS: the audio engine sets the session to 'playback' for practice audio;
+    // capture needs 'play-and-record' while listening. Restored afterwards.
+    const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+    const priorSessionType = session?.type;
+    if (session) {
+      try { session.type = 'play-and-record'; } catch { /* keep the current type */ }
+    }
 
     try {
       const constraints: MediaStreamConstraints = {
@@ -340,7 +348,18 @@ export function useChordAI(): ChordAIState {
       };
 
       stream = await navigator.mediaDevices.getUserMedia(constraints);
+      // Permission may only now have been granted (it was denied or never
+      // asked on mount), so labels and devices appear only now.
+      void refreshDevices().catch(() => {});
       audioCtx = new AudioContext();
+      // The await on getUserMedia can outlive the click's user activation,
+      // so the context may start suspended (or 'interrupted' on iOS). A
+      // suspended context feeds the analyser silence. Capped at 1 s: an
+      // interrupted iOS context can leave resume() pending until the
+      // interruption (a call, say) ends.
+      if (audioCtx.state !== 'running') {
+        await Promise.race([audioCtx.resume(), new Promise(r => setTimeout(r, 1000))]);
+      }
       const source = audioCtx.createMediaStreamSource(stream);
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 8192;
@@ -377,6 +396,9 @@ export function useChordAI(): ChordAIState {
     } finally {
       stream?.getTracks().forEach(t => t.stop());
       if (audioCtx) await audioCtx.close();
+      if (session && priorSessionType !== undefined) {
+        try { session.type = priorSessionType; } catch { /* leave as is */ }
+      }
       if (progressIntervalRef.current !== null) {
         clearInterval(progressIntervalRef.current);
         progressIntervalRef.current = null;

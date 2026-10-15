@@ -19,10 +19,10 @@ import {
   getScaleDegree,
   getInterval,
   SCALES,
-  CAGED_POSITIONS,
-  THREE_NPS_POSITIONS,
   ALL_NOTES,
+  makeNoteNamer,
 } from '../data/musicTheory';
+import { cellKey, positionCells } from '../practice/positions';
 import NoteCircle from './fretboard/NoteCircle';
 
 /** Frets that receive a single inlay dot. */
@@ -72,7 +72,17 @@ export default function Fretboard() {
     [selectedRoot, scale]
   );
 
-  const positions = positionSystem === 'caged' ? CAGED_POSITIONS : THREE_NPS_POSITIONS;
+  /** Cells of the selected position for this root/scale/tuning (null = all positions). */
+  const selectedCells = useMemo(
+    () =>
+      scale
+        ? positionCells(positionSystem, selectedPosition, selectedRoot, scale.intervals, currentTuning.notes, numFrets)
+        : null,
+    [positionSystem, selectedPosition, selectedRoot, scale, currentTuning.notes, numFrets]
+  );
+
+  /** Display names spelled for the key (F major shows Bb, not A#). */
+  const nameOf = useMemo(() => makeNoteNamer(selectedRoot, selectedScale), [selectedRoot, selectedScale]);
 
   /** Open-string note names (low → high order for labelling). */
   const stringNames = useMemo(
@@ -105,15 +115,6 @@ export default function Fretboard() {
     [currentTuning.strings]
   );
 
-  /** Returns all position objects (CAGED/3NPS) whose fret range contains `fret`. */
-  const getPositionsForNote = useCallback(
-    (fret: number, note: string) => {
-      if (!isNoteInScale(note, scaleNotes)) return [];
-      return positions.filter((pos) => fret >= pos.startFret && fret <= pos.endFret);
-    },
-    [scaleNotes, positions]
-  );
-
   /** A note is drawn at a cell when it's in the scale, or when muted notes are shown. */
   const isCellRendered = useCallback(
     (stringIndex: number, fret: number) =>
@@ -130,7 +131,12 @@ export default function Fretboard() {
 
   // At most 8 strings × 25 frets, so this is computed per render rather than memoized
   const tabStop = ((): { s: number; f: number } | null => {
-    if (focusCell && focusCell.f <= numFrets && isCellRendered(focusCell.s, focusCell.f)) {
+    if (
+      focusCell &&
+      focusCell.s < currentTuning.strings &&
+      focusCell.f <= numFrets &&
+      isCellRendered(focusCell.s, focusCell.f)
+    ) {
       return focusCell;
     }
     for (const s of strings) {
@@ -233,18 +239,15 @@ export default function Fretboard() {
       const note = getNoteAtPosition(stringIndex, fret, currentTuning.notes);
       const inScale = isNoteInScale(note, scaleNotes);
       const isRoot = note === selectedRoot;
-      const notePositions = getPositionsForNote(fret, note);
       const interval = getInterval(selectedRoot, note);
       const isHighlighted = highlightedIntervals.includes(interval);
-
-      const isInSelectedPosition =
-        selectedPosition !== null &&
-        notePositions.some((p) => p.id === selectedPosition);
+      const isInSelectedPosition = selectedCells === null || selectedCells.has(cellKey(stringIndex, fret));
+      const label = nameOf(note);
 
       // ── Display text ──────────────────────────────────────────────────────
       let displayText = '';
       if (displayMode === 'notes') {
-        displayText = note;
+        displayText = label;
       } else if (displayMode === 'intervals' && scale) {
         displayText = getScaleDegree(note, selectedRoot, scale) || '';
       }
@@ -267,7 +270,7 @@ export default function Fretboard() {
         onFocus: () => setFocusCell({ s: stringIndex, f: fret }),
       };
       const labelFor = (suffix: string) =>
-        `${note}${isRoot ? ', root' : degree ? `, degree ${degree}` : ''}, ${where}${suffix}`;
+        `${label}${isRoot ? ', root' : degree ? `, degree ${degree}` : ''}, ${where}${suffix}`;
 
       // ── Non-scale note ────────────────────────────────────────────────────
       if (!inScale) {
@@ -278,11 +281,11 @@ export default function Fretboard() {
           <NoteCircle
             key={`${stringIndex}-${fret}`}
             note={note}
-            displayText={displayMode === 'dots' ? '·' : note}
+            displayText={displayMode === 'dots' ? '·' : label}
             variant="muted"
             isHighlighted={false}
             onClick={() => handleNoteClick(stringIndex, fret)}
-            title={`${note} (not in scale)`}
+            title={`${label} (not in scale)`}
             ariaLabel={labelFor(', not in scale')}
             {...a11y}
           />
@@ -290,7 +293,7 @@ export default function Fretboard() {
       }
 
       // ── Position-filtered note (out of selected position) ─────────────────
-      if (selectedPosition !== null && !isInSelectedPosition) {
+      if (!isInSelectedPosition) {
         return (
           <NoteCircle
             key={`${stringIndex}-${fret}`}
@@ -300,7 +303,7 @@ export default function Fretboard() {
             dimmed
             isHighlighted={isHighlighted}
             onClick={() => handleNoteClick(stringIndex, fret)}
-            title={note}
+            title={label}
             ariaLabel={labelFor(', outside selected position')}
             {...a11y}
           />
@@ -316,7 +319,7 @@ export default function Fretboard() {
           variant={isRoot ? 'root' : 'scale'}
           isHighlighted={isHighlighted && !isRoot}
           onClick={() => handleNoteClick(stringIndex, fret)}
-          title={`${note}${isRoot ? ' (Root)' : ''}`}
+          title={`${label}${isRoot ? ' (Root)' : ''}`}
           ariaLabel={labelFor('')}
           {...a11y}
         />
@@ -329,9 +332,9 @@ export default function Fretboard() {
       scale,
       displayMode,
       showNonScaleNotes,
-      selectedPosition,
+      selectedCells,
+      nameOf,
       highlightedIntervals,
-      getPositionsForNote,
       handleNoteClick,
       currentTuning.strings,
       tabStop,
@@ -375,7 +378,8 @@ export default function Fretboard() {
         <div className="overflow-hidden rounded-control bg-board">
           {strings.map((stringIndex) => {
             // Thicker strings toward the bass side
-            const stringThickness = 1 + stringIndex * 0.3;
+            // Store order: 0 = lowest string, which is the thickest
+            const stringThickness = 1 + (currentTuning.strings - 1 - stringIndex) * 0.3;
             return (
               <div key={stringIndex} role="row" className="relative flex items-center" style={{ height: 'var(--fret-row-h)' }}>
                 <div

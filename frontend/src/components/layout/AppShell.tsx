@@ -10,7 +10,7 @@
  * Every view renders inside one <main> with a visually hidden <h1> naming it.
  * ChordAI and Progress are code-split (React.lazy).
  */
-import React, { Suspense, useEffect } from 'react';
+import React, { Suspense, useEffect, useRef } from 'react';
 import { useGuitarStore } from '../../store/useGuitarStore';
 import { SideNav } from '../shell/SideNav';
 import { MobileHeader, MobileTabBar } from '../shell/MobileTabBar';
@@ -49,6 +49,19 @@ function AppShell() {
   useEffect(() => {
     document.title = `${view.label} · Scale Teacher`;
   }, [view.label]);
+
+  // On a view change (nav, or programmatic: Library "Load on fretboard",
+  // Progress "Practice"), start the new view at the top and move focus to
+  // <main> so keyboard and screen reader users land in the new content
+  // instead of on a control that no longer exists. Skipped on first render.
+  const mainRef = useRef<HTMLElement>(null);
+  const prevViewId = useRef(view.id);
+  useEffect(() => {
+    if (prevViewId.current === view.id) return;
+    prevViewId.current = view.id;
+    window.scrollTo(0, 0);
+    mainRef.current?.focus({ preventScroll: true });
+  }, [view.id]);
 
   let content: React.ReactNode;
   switch (view.id) {
@@ -96,6 +109,7 @@ function AppShell() {
       <SideNav />
       <MobileHeader />
       <main
+        ref={mainRef}
         id="main-content"
         tabIndex={-1}
         className="min-w-0 pb-[calc(var(--transport-h)+var(--tabbar-h)+env(safe-area-inset-bottom))] md:pb-[calc(var(--transport-h)+env(safe-area-inset-bottom))]"

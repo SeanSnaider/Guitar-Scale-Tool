@@ -11,7 +11,7 @@
  *  - Idle after first play: play icon, hint "Tap to replay"
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Play } from 'lucide-react';
 import { cn } from '../../ui';
 
@@ -28,6 +28,12 @@ export interface QuestionPromptProps {
    * Disabled during the brief moment after answering while the next question loads.
    */
   canReplay: boolean;
+  /**
+   * Move keyboard focus to the play button on mount. The parent keys this
+   * component by question, so each new question receives focus; the answer
+   * card (or Start button) the user was on has just been disabled or removed.
+   */
+  focusOnMount?: boolean;
 }
 
 /**
@@ -44,8 +50,15 @@ export default function QuestionPrompt({
   onPlay,
   isPlaying,
   canReplay,
+  focusOnMount = false,
 }: QuestionPromptProps): React.ReactElement {
   const [hasPlayed, setHasPlayed] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const focusAtMount = useRef(focusOnMount);
+
+  useEffect(() => {
+    if (focusAtMount.current) buttonRef.current?.focus();
+  }, []);
 
   /**
    * Handles a click on the play button.
@@ -68,6 +81,7 @@ export default function QuestionPrompt({
       </p>
 
       <button
+        ref={buttonRef}
         type="button"
         onClick={handleClick}
         disabled={isDisabled}

@@ -623,32 +623,42 @@ export const TUNINGS: Record<string, TuningDefinition> = {
 export const STRING_NAMES = ['E', 'A', 'D', 'G', 'B', 'e'] as const;
 export const STANDARD_TUNING = TUNINGS.standard.notes;
 
+/**
+ * A scale position as a fret window RELATIVE TO THE ROOT on the lowest
+ * string: `startFret`/`endFret` are offsets for a root at fret 0, so the
+ * shape is moved to the actual key (and repeated every 12 frets) by
+ * practice/positions.ts. Do not compare them with absolute frets directly.
+ */
 export interface ScalePosition {
   id: number;
   name: string;
   startFret: number;
   endFret: number;
-  color: string;
 }
 
-// CAGED System (5 positions)
+// CAGED system: five overlapping shapes, offsets from the root on the lowest string
 export const CAGED_POSITIONS: ScalePosition[] = [
-  { id: 1, name: 'Position 1', startFret: 0, endFret: 4, color: '#9B8ABD' },   // Taro lavender
-  { id: 2, name: 'Position 2', startFret: 2, endFret: 6, color: '#7D9B76' },   // Botanical sage
-  { id: 3, name: 'Position 3', startFret: 4, endFret: 8, color: '#D4A5A5' },   // Taro pink
-  { id: 4, name: 'Position 4', startFret: 7, endFret: 11, color: '#A8C69F' },  // Botanical light
-  { id: 5, name: 'Position 5', startFret: 9, endFret: 13, color: '#B8A8D4' },  // Taro light lavender
+  { id: 1, name: 'Position 1', startFret: 0, endFret: 4 },
+  { id: 2, name: 'Position 2', startFret: 2, endFret: 6 },
+  { id: 3, name: 'Position 3', startFret: 4, endFret: 8 },
+  { id: 4, name: 'Position 4', startFret: 7, endFret: 11 },
+  { id: 5, name: 'Position 5', startFret: 9, endFret: 13 },
 ];
 
-// 3 Notes Per String System (7 positions, one for each mode)
+/**
+ * 3 notes per string: one pattern per scale degree (pattern k starts on
+ * degree k on the lowest string). Kept for callers that list pattern names;
+ * the cells are computed from pitches in practice/positions.ts, not from
+ * these windows.
+ */
 export const THREE_NPS_POSITIONS: ScalePosition[] = [
-  { id: 1, name: 'Pattern 1', startFret: 0, endFret: 4, color: '#9B8ABD' },
-  { id: 2, name: 'Pattern 2', startFret: 2, endFret: 6, color: '#7D9B76' },
-  { id: 3, name: 'Pattern 3', startFret: 4, endFret: 8, color: '#D4A5A5' },
-  { id: 4, name: 'Pattern 4', startFret: 5, endFret: 9, color: '#A8C69F' },
-  { id: 5, name: 'Pattern 5', startFret: 7, endFret: 11, color: '#B8A8D4' },
-  { id: 6, name: 'Pattern 6', startFret: 9, endFret: 13, color: '#8FBC8F' },
-  { id: 7, name: 'Pattern 7', startFret: 11, endFret: 15, color: '#DEB887' },
+  { id: 1, name: 'Pattern 1', startFret: 0, endFret: 4 },
+  { id: 2, name: 'Pattern 2', startFret: 2, endFret: 6 },
+  { id: 3, name: 'Pattern 3', startFret: 4, endFret: 8 },
+  { id: 4, name: 'Pattern 4', startFret: 5, endFret: 9 },
+  { id: 5, name: 'Pattern 5', startFret: 7, endFret: 11 },
+  { id: 6, name: 'Pattern 6', startFret: 9, endFret: 13 },
+  { id: 7, name: 'Pattern 7', startFret: 11, endFret: 15 },
 ];
 
 export interface ChordDefinition {
@@ -716,7 +726,7 @@ export function getNoteAtPosition(
  * Generate all notes in a scale
  */
 export function getScaleNotes(rootNote: string, intervals: number[]): string[] {
-  const rootIndex = ALL_NOTES.indexOf(rootNote as NoteName);
+  const rootIndex = ALL_NOTES.indexOf((FLAT_TO_SHARP[rootNote] ?? rootNote) as NoteName);
   if (rootIndex === -1) return [];
 
   return intervals.map(interval => {
@@ -746,8 +756,8 @@ export function getScaleDegree(note: string, rootNote: string, scale: Scale): st
  * Get the interval (in semitones) between two notes
  */
 export function getInterval(note1: string, note2: string): number {
-  const index1 = ALL_NOTES.indexOf(note1 as NoteName);
-  const index2 = ALL_NOTES.indexOf(note2 as NoteName);
+  const index1 = ALL_NOTES.indexOf((FLAT_TO_SHARP[note1] ?? note1) as NoteName);
+  const index2 = ALL_NOTES.indexOf((FLAT_TO_SHARP[note2] ?? note2) as NoteName);
   if (index1 === -1 || index2 === -1) return -1;
   return (index2 - index1 + 12) % 12;
 }
@@ -813,49 +823,76 @@ export function midiToFrequency(midi: number): number {
   return 440 * Math.pow(2, (midi - 69) / 12);
 }
 
-/**
- * Get the octave of a note on the fretboard
- * @deprecated Use stringFretToMidi + midiToFrequency instead.
- */
-export function getNoteOctave(stringIndex: number, fret: number): number {
-  // Base octaves for each string in standard tuning (low E to high e)
-  const baseOctaves = [2, 2, 3, 3, 3, 4];
-  const baseNote = STANDARD_TUNING[stringIndex];
-  const currentNote = (baseNote + fret) % 12;
+/** A chord built on one degree of a scale. */
+export interface DiatonicChord {
+  root: string;
+  /** Roman numeral: case and °/+ follow the triad's quality (I, ii, vii°, III+). */
+  degree: string;
+  /** CHORD_TYPES key for the triad, or 'other' when it isn't a standard triad. */
+  type: string;
+  /** CHORD_TYPES key for the seventh chord, or 'other'. */
+  seventh: string;
+  /** Triad intervals in semitones from the chord root, e.g. [0, 4, 7]. */
+  intervals: number[];
+  /** Chord symbol suffix, e.g. '', 'm', 'dim', 'aug', '(b5)'. */
+  symbol: string;
+}
 
-  let octave = baseOctaves[stringIndex];
-  // If we've wrapped past B to C, increment the octave
-  if (baseNote + fret >= 12) {
-    octave += Math.floor((baseNote + fret) / 12);
-  }
-  // Adjust for where B wraps to C
-  if (currentNote < baseNote % 12 && fret > 0) {
-    octave += 1;
-  }
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
 
-  return octave;
+/** Finds the CHORD_TYPES key whose intervals equal `intervals`, if any. */
+function chordTypeFor(intervals: number[]): string | undefined {
+  return Object.entries(CHORD_TYPES).find(
+    ([, def]) => def.intervals.length === intervals.length && def.intervals.every((v, i) => v === intervals[i]),
+  )?.[0];
+}
+
+/** Describes a non-standard triad by its 3rd and 5th, e.g. [0,4,6] -> '(b5)'. */
+function oddTriadSymbol([, third, fifth]: number[]): string {
+  const t = third === 3 ? 'm' : third === 2 ? 'sus2' : third === 5 ? 'sus4' : '';
+  const f = fifth === 6 ? 'b5' : fifth === 8 ? '#5' : fifth === 7 ? '' : `${fifth}st`;
+  return t + (f ? `(${f})` : '');
 }
 
 /**
- * Get diatonic chords for a given scale
+ * Diatonic chords of a 7-note scale: each degree's triad and seventh are
+ * built by stacking the scale's own thirds (degrees i, i+2, i+4, i+6), and
+ * the quality is read from the resulting semitone gaps. So Dorian gets
+ * i ii III IV v vi° VII and harmonic minor gets III+ and V, which a fixed
+ * major/minor table cannot express.
+ *
+ * Scales without exactly 7 notes aren't built from stacked thirds, so they
+ * return [] (the caller explains why).
  */
-export function getDiatonicChords(rootNote: string, scaleKey: string): Array<{
-  root: string;
-  degree: string;
-  type: string;
-  seventh: string;
-}> {
+export function getDiatonicChords(rootNote: string, scaleKey: string): DiatonicChord[] {
   const scale = SCALES[scaleKey];
-  if (!scale) return [];
+  if (!scale || scale.intervals.length !== 7) return [];
 
-  const scaleNotes = getScaleNotes(rootNote, scale.intervals);
-  const isMinor = scale.category === 'minor' || scaleKey.includes('minor') || scaleKey === 'aeolian';
-  const chordQualities = isMinor ? DIATONIC_CHORDS_MINOR : DIATONIC_CHORDS_MAJOR;
+  const notes = getScaleNotes(rootNote, scale.intervals);
+  const iv = scale.intervals;
+  const above = (i: number, steps: number) => {
+    const j = (i + steps) % 7;
+    return (iv[j] - iv[i] + 12) % 12;
+  };
 
-  return scaleNotes.map((note, index) => ({
-    root: note,
-    ...chordQualities[index % chordQualities.length],
-  }));
+  return notes.map((note, i) => {
+    const triad = [0, above(i, 2), above(i, 4)];
+    const seventh = [...triad, above(i, 6)];
+    const type = chordTypeFor(triad) ?? 'other';
+    const seventhType = chordTypeFor(seventh) ?? 'other';
+    const isMajorLike = triad[1] === 4;
+    let degree = isMajorLike ? ROMAN[i] : ROMAN[i].toLowerCase();
+    if (type === 'diminished') degree += '°';
+    if (type === 'augmented') degree += '+';
+    return {
+      root: note,
+      degree,
+      type,
+      seventh: seventhType,
+      intervals: triad,
+      symbol: type === 'other' ? oddTriadSymbol(triad) : CHORD_TYPES[type].symbol,
+    };
+  });
 }
 
 /**
@@ -985,4 +1022,133 @@ export function getIntervalName(semitones: number): string {
     11: 'Major 7th',
   };
   return INTERVAL_NAMES[semitones] ?? 'Unknown';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Interval names from degree labels
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ORDINAL = ['', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', 'octave', '9th', '10th', '11th', '12th', '13th'];
+
+/**
+ * The interval name for a scale degree label ("b3" -> "Minor 3rd",
+ * "#4" -> "Augmented 4th", "bb7" -> "Diminished 7th"). Unlike
+ * getIntervalName(semitones), this respects the scale's own spelling, so
+ * Lydian's #4 is an augmented 4th, not a tritone, and Super Locrian's b4 is a
+ * diminished 4th, not a major 3rd.
+ */
+export function intervalNameForDegree(degree: string): string {
+  const m = /^(b{0,2}|#{0,2})(\d+)$/.exec(degree);
+  if (!m) return degree;
+  const [, acc, numStr] = m;
+  const num = Number(numStr);
+  if (num === 1 && !acc) return 'Root';
+  const perfectClass = [1, 4, 5].includes(((num - 1) % 7) + 1);
+  const ord = ORDINAL[num] ?? `${num}th`;
+  if (perfectClass) {
+    if (!acc) return `Perfect ${ord}`;
+    if (acc === 'b') return `Diminished ${ord}`;
+    if (acc === '#') return `Augmented ${ord}`;
+    return `${acc.startsWith('b') ? 'Doubly diminished' : 'Doubly augmented'} ${ord}`;
+  }
+  if (!acc) return `Major ${ord}`;
+  if (acc === 'b') return `Minor ${ord}`;
+  if (acc === 'bb') return `Diminished ${ord}`;
+  if (acc === '#') return `Augmented ${ord}`;
+  return `Doubly augmented ${ord}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Spelling (display only; internal note math stays on sharp names)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+const LETTER_PC: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+const ACCIDENTAL: Record<number, string> = { [-2]: 'bb', [-1]: 'b', 0: '', 1: '#', 2: '##' };
+
+/** Normalizes a flat name to the sharp name used internally ("Bb" -> "A#"). */
+export function toSharpName(note: string): string {
+  return FLAT_TO_SHARP[note] ?? note;
+}
+
+/** Spells pitch class `pc` on `letter` ("E" + pc 3 -> "Eb"); null if more than a double accidental away. */
+function spellOn(letter: string, pc: number): string | null {
+  let diff = (pc - LETTER_PC[letter] + 12) % 12;
+  if (diff > 6) diff -= 12;
+  return diff in ACCIDENTAL ? letter + ACCIDENTAL[diff] : null;
+}
+
+function accidentalWeight(names: string[]): number {
+  return names.reduce((w, n) => w + (n.length - 1), 0);
+}
+
+/**
+ * Spells a scale by key: each degree goes on the letter its degree label
+ * names ("b3" -> the 3rd letter, flattened as needed), so 7-note scales use
+ * one letter per degree (F major -> F G A Bb C D E; Eb major -> Eb F G Ab Bb C D).
+ * The root is spelled whichever way (sharp or flat name) needs fewer
+ * accidentals: A# major is shown as Bb major.
+ *
+ * @returns Spelled names in scale order, aligned with getScaleNotes().
+ */
+export function spellScale(rootNote: string, scaleKey: string): string[] {
+  const scale = SCALES[scaleKey];
+  const root = toSharpName(rootNote);
+  const rootPc = ALL_NOTES.indexOf(root as NoteName);
+  if (!scale || rootPc === -1) return [];
+
+  const spellFrom = (rootName: string): string[] | null => {
+    const rootLetterIdx = LETTERS.indexOf(rootName[0]);
+    const out: string[] = [];
+    for (let i = 0; i < scale.intervals.length; i++) {
+      const m = /(\d+)$/.exec(scale.degrees[i] ?? '');
+      const steps = m ? Number(m[1]) - 1 : i;
+      const letter = LETTERS[(rootLetterIdx + steps) % 7];
+      const name = spellOn(letter, (rootPc + scale.intervals[i]) % 12);
+      if (!name) return null;
+      out.push(name);
+    }
+    return out;
+  };
+
+  const candidates = [root, ENHARMONIC_MAP[root]].filter(Boolean).map((r) => spellFrom(r as string)).filter((c): c is string[] => !!c);
+  if (candidates.length === 0) return getScaleNotes(root, scale.intervals);
+  return candidates.reduce((best, c) => (accidentalWeight(c) < accidentalWeight(best) ? c : best));
+}
+
+/**
+ * A display namer for the current key: scale tones use spellScale(); other
+ * notes use the same side (flats or sharps) as the key. Accepts sharp names.
+ */
+export function makeNoteNamer(rootNote: string, scaleKey: string): (sharpName: string) => string {
+  const scale = SCALES[scaleKey];
+  const spelled = spellScale(rootNote, scaleKey);
+  const byPc = new Map<number, string>();
+  if (scale) {
+    const rootPc = ALL_NOTES.indexOf(toSharpName(rootNote) as NoteName);
+    scale.intervals.forEach((iv, i) => byPc.set((rootPc + iv) % 12, spelled[i]));
+  }
+  const flatSide = spelled.some((n) => n.includes('b')) && !spelled.some((n) => n.includes('#'));
+  return (sharpName: string) => {
+    const pc = ALL_NOTES.indexOf(toSharpName(sharpName) as NoteName);
+    if (pc === -1) return sharpName;
+    return byPc.get(pc) ?? (flatSide ? ENHARMONIC_MAP[sharpName] ?? sharpName : sharpName);
+  };
+}
+
+/**
+ * The root a related scale should be shown on. Relatives and modes share the
+ * current scale's pitch-class set, so their root is wherever that set
+ * matches (C major -> A natural minor). Parallel relationships share no set,
+ * so the root stays the same (C major -> C minor).
+ */
+export function relatedScaleRoot(rootNote: string, scaleKey: string, relatedKey: string): string {
+  const current = SCALES[scaleKey];
+  const related = SCALES[relatedKey];
+  if (!current || !related) return rootNote;
+  const pcs = (root: string, intervals: number[]) => new Set(getScaleNotes(root, intervals));
+  const target = pcs(rootNote, current.intervals);
+  const same = (a: Set<string>) => a.size === target.size && [...a].every((n) => target.has(n));
+  if (same(pcs(rootNote, related.intervals))) return rootNote;
+  return ALL_NOTES.find((r) => same(pcs(r, related.intervals))) ?? rootNote;
 }

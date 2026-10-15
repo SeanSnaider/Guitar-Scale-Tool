@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import { Play, SlidersHorizontal, Square } from 'lucide-react';
 import { useGuitarStore } from '../../store/useGuitarStore';
-import { SCALES } from '../../data/musicTheory';
+import { SCALES, spellScale } from '../../data/musicTheory';
 import { Button, Select, Switch, cn } from '../../ui';
 import { useScalePlayback } from '../../practice/useScalePlayback';
 import { useScalePattern } from '../../practice/useScalePattern';
@@ -46,7 +46,7 @@ export function TransportBar() {
         'lg:left-[var(--rail-w)]',
       )}
     >
-      <div className="relative flex h-[var(--transport-h)] items-center gap-3 px-[var(--gutter)] md:gap-5">
+      <div className="relative flex h-[var(--transport-h)] items-center gap-2 px-[var(--gutter)] sm:gap-3 md:gap-5">
         <Button
           variant="primary"
           size="lg"
@@ -54,10 +54,10 @@ export function TransportBar() {
           onClick={toggle}
           aria-keyshortcuts="Space"
           title="Play or stop the scale (Space)"
-          className="px-4 max-sm:h-10 max-[359px]:px-3"
+          className="px-4 max-sm:h-10 max-[399px]:px-3"
         >
-          {/* Below 360px only the icon shows; the text stays the accessible name */}
-          <span className="max-[359px]:sr-only">
+          {/* Below 400px only the icon shows; the text stays the accessible name */}
+          <span className="max-[399px]:sr-only">
             {isPlaying ? 'Stop' : (
               <>
                 Play<span className="max-sm:sr-only"> scale</span>
@@ -68,7 +68,7 @@ export function TransportBar() {
 
         <div className="hidden min-w-0 flex-col leading-tight xl:flex">
           <span className="truncate text-[13px] font-bold">
-            {root} {scaleName}
+            {spellScale(root, scaleKey)[0] ?? root} {scaleName}
           </span>
           <span className="text-xs text-muted">
             {pattern.length} notes · {direction}

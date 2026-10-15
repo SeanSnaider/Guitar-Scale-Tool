@@ -5,8 +5,14 @@ practising, capturing start/end times, which scales were worked on,
 tempo, and optional accuracy data.
 """
 from datetime import datetime
+from typing import Annotated
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+# Shared bounds for request validation.
+BPM_MIN = 20
+BPM_MAX = 400
+MAX_SCALES_PER_SESSION = 50
 
 
 class PracticeSessionCreate(BaseModel):
@@ -17,8 +23,10 @@ class PracticeSessionCreate(BaseModel):
         bpm: Starting tempo in beats per minute.
     """
 
-    scales_practiced: list[str] = []
-    bpm: int = 120
+    scales_practiced: list[Annotated[str, Field(min_length=1, max_length=64)]] = Field(
+        default_factory=list, max_length=MAX_SCALES_PER_SESSION
+    )
+    bpm: int = Field(120, ge=BPM_MIN, le=BPM_MAX)
 
 
 class PracticeSessionEnd(BaseModel):
@@ -28,7 +36,7 @@ class PracticeSessionEnd(BaseModel):
         accuracy: Optional 0-1 accuracy score recorded by the client.
     """
 
-    accuracy: float | None = None
+    accuracy: float | None = Field(None, ge=0.0, le=1.0)
 
 
 class PracticeSessionResponse(BaseModel):

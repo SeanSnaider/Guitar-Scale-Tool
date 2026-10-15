@@ -4,6 +4,11 @@
  * The question counter and segmented progress track for an ear-training
  * session. Each of the thin segments encodes one question: answered
  * correctly, answered incorrectly, the one being asked now, or not reached.
+ *
+ * The segments are decorative (aria-hidden); the progressbar's
+ * aria-valuetext carries the same information as one sentence. Right and
+ * wrong differ by shape as well as hue: correct is a filled bar, incorrect a
+ * hollow outlined bar.
  */
 
 import React from 'react';
@@ -29,7 +34,7 @@ type SegmentState = 'correct' | 'incorrect' | 'current' | 'done' | 'future';
 
 const SEGMENT: Record<SegmentState, string> = {
   correct: 'bg-correct',
-  incorrect: 'bg-incorrect',
+  incorrect: 'border-[1.5px] border-incorrect bg-transparent',
   current: 'bg-ink',
   done: 'bg-ink',
   future: 'bg-line-strong',
@@ -38,9 +43,9 @@ const SEGMENT: Record<SegmentState, string> = {
 /**
  * ProgressBar
  *
- * Renders "Question N of M" above a row of thin segments. Answered segments
- * fill with the correct/incorrect colour, the active question is the accent,
- * and unreached questions stay a neutral hairline grey.
+ * Renders "Question N of M" above a row of thin segments. Correct answers
+ * are filled green, incorrect ones a hollow red outline, the active question
+ * is ink, and unreached questions stay a neutral hairline grey.
  *
  * @param props - {@link ProgressBarProps}
  * @returns The rendered progress bar element.
@@ -50,6 +55,9 @@ export default function ProgressBar({
   current,
   answers,
 }: ProgressBarProps): React.ReactElement {
+  const correctCount = answers.filter((a) => a === 'correct').length;
+  const incorrectCount = answers.filter((a) => a === 'incorrect').length;
+
   return (
     <div
       className="w-full"
@@ -57,7 +65,8 @@ export default function ProgressBar({
       aria-valuenow={current + 1}
       aria-valuemin={1}
       aria-valuemax={total}
-      aria-label={`Question ${current + 1} of ${total}`}
+      aria-valuetext={`Question ${current + 1} of ${total}, ${correctCount} correct, ${incorrectCount} incorrect`}
+      aria-label="Session progress"
     >
       <p className="mb-2 text-xs text-muted">
         Question{' '}
@@ -67,7 +76,7 @@ export default function ProgressBar({
         of <span className="font-mono">{total}</span>
       </p>
 
-      <div className="flex w-full gap-1">
+      <div aria-hidden="true" className="flex w-full gap-1">
         {Array.from({ length: total }, (_, i) => {
           const status = answers[i] ?? 'pending';
           // The store pads unreached slots with 'pending', so position
@@ -81,15 +90,11 @@ export default function ProgressBar({
           return (
             <div
               key={i}
+              data-state={state}
               className={cn(
-                'h-1 flex-1 rounded-full transition-colors duration-300',
+                'h-1.5 flex-1 rounded-full transition-colors duration-300',
                 SEGMENT[state],
               )}
-              aria-label={
-                state === 'future'
-                  ? `Question ${i + 1}: upcoming`
-                  : `Question ${i + 1}: ${state === 'current' || state === 'done' ? 'pending' : state}`
-              }
             />
           );
         })}

@@ -6,26 +6,25 @@
  *
  * Features:
  * - Text search across scale name, key, category and description
- * - Category filter chips (All + each ScaleCategory)
+ * - Category filter chips (All + each ScaleCategory), applied on top of the
+ *   search results
  * - A grid of scale cards: name, category, description, formula, a 12-cell
  *   interval strip showing the scale's shape, and a "Load on fretboard" action
  *
  * Dependencies:
  * - useGuitarStore: selectedScale, setSelectedScale, setActiveTab,
  *   scaleSearchQuery, setScaleSearchQuery, selectedCategory, setSelectedCategory
- * - musicTheory: SCALES, SCALE_CATEGORIES, searchScales, getScalesByCategory
+ * - musicTheory: SCALES, SCALE_CATEGORIES, searchScales
  */
 
-import { useMemo } from 'react';
+import { useId, useMemo } from 'react';
 import { Check } from 'lucide-react';
 import { useGuitarStore } from '../store/useGuitarStore';
 import {
   SCALES,
   SCALE_CATEGORIES,
   searchScales,
-  getScalesByCategory,
   type Scale,
-  type ScaleCategory,
 } from '../data/musicTheory';
 import { Button, Chip, TextField, cn, PageTitle } from '../ui';
 
@@ -88,6 +87,9 @@ interface ScaleCardProps {
  */
 function ScaleCard({ entry, isSelected, onLoad }: ScaleCardProps) {
   const { key, scale } = entry;
+  // The button's name stays its visible text (WCAG 2.5.3); the scale name
+  // reaches screen readers as its description.
+  const headingId = useId();
   return (
     <li
       className={cn(
@@ -96,7 +98,9 @@ function ScaleCard({ entry, isSelected, onLoad }: ScaleCardProps) {
       )}
     >
       <div>
-        <h3 className="text-[15px] leading-snug font-bold text-ink">{scale.name}</h3>
+        <h3 id={headingId} className="text-[15px] leading-snug font-bold text-ink">
+          {scale.name}
+        </h3>
         <p className="text-xs text-muted">{CATEGORY_NAME.get(scale.category) ?? scale.category}</p>
       </div>
 
@@ -113,7 +117,7 @@ function ScaleCard({ entry, isSelected, onLoad }: ScaleCardProps) {
         variant={isSelected ? 'ghost' : 'secondary'}
         icon={isSelected ? Check : undefined}
         onClick={() => onLoad(key)}
-        aria-label={isSelected ? `${scale.name}, currently loaded` : `Load ${scale.name} on fretboard`}
+        aria-describedby={headingId}
         className={cn('mt-auto self-start', isSelected && 'border border-line')}
       >
         {isSelected ? 'Loaded' : 'Load on fretboard'}
@@ -140,10 +144,11 @@ export default function ScalesBrowser() {
   const setSelectedCategory = useGuitarStore((s) => s.setSelectedCategory);
 
   const visibleScales = useMemo<ScaleEntry[]>(() => {
-    // Search mode: the category filter is ignored while a query is present
-    if (scaleSearchQuery.trim()) return searchScales(scaleSearchQuery);
-    if (selectedCategory) return getScalesByCategory(selectedCategory as ScaleCategory);
-    return Object.entries(SCALES).map(([key, scale]) => ({ key, scale }));
+    // Search narrows the set; a pressed category chip narrows it further
+    const base: ScaleEntry[] = scaleSearchQuery.trim()
+      ? searchScales(scaleSearchQuery)
+      : Object.entries(SCALES).map(([key, scale]) => ({ key, scale }));
+    return selectedCategory ? base.filter((e) => e.scale.category === selectedCategory) : base;
   }, [scaleSearchQuery, selectedCategory]);
 
   /** Loads the scale onto the fretboard and switches to Practice. */
@@ -158,6 +163,7 @@ export default function ScalesBrowser() {
   };
 
   const query = scaleSearchQuery.trim();
+  const categoryName = selectedCategory ? CATEGORY_NAME.get(selectedCategory as Scale['category']) ?? selectedCategory : null;
 
   return (
     <div className="flex flex-col gap-5">
@@ -200,13 +206,14 @@ export default function ScalesBrowser() {
           <span className="tabular font-mono text-ink">{visibleScales.length}</span> scale
           {visibleScales.length !== 1 ? 's' : ''}
           {query ? ` matching "${query}"` : ''}
+          {categoryName ? ` in ${categoryName}` : ''}
         </p>
 
         {visibleScales.length === 0 ? (
           <div className="flex flex-col items-center gap-3 rounded-panel border border-line bg-surface px-4 py-10 text-center">
             <p className="text-sm text-muted">No scales found. Try a different search term or category.</p>
             <Button variant="ghost" size="sm" onClick={clearFilters}>
-              Clear search
+              {query && categoryName ? 'Clear search and category' : categoryName ? 'Clear category' : 'Clear search'}
             </Button>
           </div>
         ) : (

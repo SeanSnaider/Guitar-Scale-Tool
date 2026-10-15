@@ -96,7 +96,7 @@ describe('FretboardControls display mode', () => {
 describe('FretboardControls positions', () => {
   it('switching the system resets to position 1', () => {
     render(<FretboardControls />);
-    fireEvent.click(screen.getByRole('button', { name: 'Three notes per string' }));
+    fireEvent.click(screen.getByRole('button', { name: '3NPS, three notes per string' }));
     expect(mockSetPositionSystem).toHaveBeenCalledWith('3nps');
     expect(mockSetSelectedPosition).toHaveBeenCalledWith(1);
   });

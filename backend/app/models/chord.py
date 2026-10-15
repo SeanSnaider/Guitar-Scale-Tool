@@ -20,11 +20,11 @@ class ChordRecordCreate(BaseModel):
         practice_session_id: Optional ID of the containing session.
     """
 
-    chord: str
+    chord: str = Field(min_length=1, max_length=64)
     confidence: float = Field(ge=0.0, le=1.0)
-    root: str
-    quality: str
-    practice_session_id: str | None = None
+    root: str = Field(min_length=1, max_length=64)
+    quality: str = Field(min_length=1, max_length=64)
+    practice_session_id: str | None = Field(None, max_length=64)
 
 
 class ChordRecordResponse(BaseModel):

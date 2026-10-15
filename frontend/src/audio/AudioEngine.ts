@@ -13,9 +13,9 @@
  *     call-sites (Fretboard, Tablature, PracticeMode) continue to work.
  *
  * Gain graph:
- *   GuitarSynth output ─┐
- *   Metronome output   ─┤─► masterGain ─► AudioContext.destination
- *   (other sources)    ─┘
+ *   interactive notes ─────────────┐
+ *   scale run bus (one per run) ───┴─► noteGain ─┐
+ *   Metronome clicks ─────────────► metronomeGain ┴─► masterGain ─► compressor ─► destination
  */
 
 import {
@@ -25,6 +25,7 @@ import {
 } from '../data/musicTheory';
 import { GuitarSynth } from './GuitarSynth';
 import { Metronome } from './Metronome';
+import type { AccentLevel } from './Metronome';
 
 /** Public audio settings exposed to the UI. */
 export interface AudioSettings {
@@ -46,6 +47,29 @@ export interface NoteInfo {
   fret?: number;
 }
 
+/**
+ * Fade (s) applied to a scale run's bus on Stop before it is disconnected.
+ * Long enough to avoid a click from cutting a sounding note, short enough
+ * that Stop feels instant.
+ */
+const RUN_FADE_S = 0.012;
+
+/**
+ * Smoothing time constant (s) for volume changes. setTargetAtTime approaches
+ * the target exponentially, ~95% of the way after 3 time constants (30 ms),
+ * which removes the zipper noise of stepping gain.value directly.
+ */
+const VOLUME_SMOOTHING_S = 0.01;
+
+/** Minimum lead (s) between scheduling a scale run and its first note. */
+const SCALE_START_LEAD_S = 0.1;
+
+/** Minimum lead (s) when lining a run up with the metronome's next beat. */
+const METRONOME_ALIGN_LEAD_S = 0.05;
+
+/** Safari's Audio Session API (navigator.audioSession), not yet in lib.dom. */
+type AudioSessionNavigator = Navigator & { audioSession?: { type: string } };
+
 /** Internal record of a pre-scheduled scale beat. */
 interface ScheduledBeat {
   index: number;
@@ -62,14 +86,27 @@ class AudioEngine {
   private metronome: Metronome | null = null;
 
   private isInitialized = false;
+  /**
+   * Set when initialize() failed (no Web Audio, constructor threw). Cached so
+   * every later call is a cheap no-op instead of retrying forever.
+   */
+  private initFailed = false;
   /** In-flight initialization promise — prevents double AudioContext creation. */
   private _initializingPromise: Promise<boolean> | null = null;
+  /** Whether the resume-on-next-gesture listeners are attached. */
+  private gestureResumeArmed = false;
 
   // Scale playback state
   private scheduledBeats: ScheduledBeat[] = [];
   private beatDuration: number = 0.5;   // seconds, stored for end-detection
   private rafHandle: number | null = null;
   private scaleIsPlaying = false;
+  /**
+   * Gain node every note of the current scale run is routed through. Notes
+   * are all scheduled up front and keep no handle, so this bus is the only
+   * way to silence a run: fade it out and disconnect it on Stop.
+   */
+  private runBus: GainNode | null = null;
 
   private settings: AudioSettings = {
     masterVolume:    0.7,
@@ -83,10 +120,10 @@ class AudioEngine {
   // ── Callbacks ──────────────────────────────────────────────────────────────
 
   /**
-   * Called each metronome beat with (beatIndex, isAccent).
+   * Called each metronome beat with (beatIndex, isAccent, accentLevel).
    * Wire this in your component for visual beat feedback.
    */
-  public onMetronomeBeat: ((beat: number, isAccent: boolean) => void) | null = null;
+  public onMetronomeBeat: ((beat: number, isAccent: boolean, level: AccentLevel) => void) | null = null;
 
   /**
    * Called by requestAnimationFrame during scale playback with the current
@@ -105,16 +142,34 @@ class AudioEngine {
    */
   async initialize(): Promise<boolean> {
     if (this.isInitialized) return true;
+    if (this.initFailed) return false;
     // If already initializing, return the in-flight promise to avoid double AudioContext.
     if (this._initializingPromise) return this._initializingPromise;
 
     this._initializingPromise = (async () => {
       try {
+        // iOS: the default 'auto' session is muted by the ring/silent switch.
+        // 'playback' makes this behave like a music app. Guarded: only Safari
+        // 16.4+ has navigator.audioSession.
+        const session = (navigator as AudioSessionNavigator).audioSession;
+        if (session) {
+          try {
+            session.type = 'playback';
+          } catch {
+            /* unsupported value; keep the default */
+          }
+        }
+
         // Older Safari only exposes the prefixed constructor
         const Ctor =
           window.AudioContext ??
           (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
         this.audioContext = new Ctor();
+        const ctx = this.audioContext;
+        // A context can be suspended or (iOS) 'interrupted' by a call, Siri or
+        // another app at any time. Resuming only works from a user gesture, so
+        // whenever it leaves 'running', retry on the next pointer/key press.
+        ctx.onstatechange = () => this.onContextStateChange();
 
         // Dynamics compressor → destination (prevents clipping when chords/multiple notes play)
         const compressor = this.audioContext.createDynamicsCompressor();
@@ -144,14 +199,30 @@ class AudioEngine {
         this.guitarSynth = new GuitarSynth(this.audioContext, this.noteGain);
         this.metronome   = new Metronome(this.audioContext, this.metronomeGain);
 
-        this.metronome.onBeat = (beat, isAccent) => {
-          if (this.onMetronomeBeat) this.onMetronomeBeat(beat, isAccent);
+        this.metronome.onBeat = (beat, isAccent, level) => {
+          if (this.onMetronomeBeat) this.onMetronomeBeat(beat, isAccent, level);
         };
 
         this.isInitialized = true;
+        // Created outside a gesture (or before one finished) it starts
+        // suspended, and no statechange fires for the initial state.
+        this.onContextStateChange();
         return true;
       } catch (error) {
         console.error('AudioEngine: failed to initialize AudioContext:', error);
+        // Don't leak a half-built context (browsers cap how many can exist).
+        const half = this.audioContext;
+        if (half) {
+          half.onstatechange = null;
+          half.close().catch(() => {});
+        }
+        this.audioContext  = null;
+        this.masterGain    = null;
+        this.noteGain      = null;
+        this.metronomeGain = null;
+        this.guitarSynth   = null;
+        this.metronome     = null;
+        this.initFailed    = true;
         return false;
       } finally {
         this._initializingPromise = null;
@@ -167,9 +238,14 @@ class AudioEngine {
   updateSettings(newSettings: Partial<AudioSettings>): void {
     this.settings = { ...this.settings, ...newSettings };
 
-    if (this.masterGain)    this.masterGain.gain.value    = this.settings.masterVolume;
-    if (this.noteGain)      this.noteGain.gain.value      = this.settings.noteVolume;
-    if (this.metronomeGain) this.metronomeGain.gain.value = this.settings.metronomeVolume;
+    const ctx = this.audioContext;
+    if (!ctx) return; // initialize() reads this.settings when it builds the graph
+    // Glide to the new level rather than stepping it (stepping is audible as
+    // zipper noise while a volume slider is dragged).
+    const now = ctx.currentTime;
+    this.masterGain?.gain.setTargetAtTime(this.settings.masterVolume, now, VOLUME_SMOOTHING_S);
+    this.noteGain?.gain.setTargetAtTime(this.settings.noteVolume, now, VOLUME_SMOOTHING_S);
+    this.metronomeGain?.gain.setTargetAtTime(this.settings.metronomeVolume, now, VOLUME_SMOOTHING_S);
   }
 
   // ── Note Playback ──────────────────────────────────────────────────────────
@@ -183,10 +259,8 @@ class AudioEngine {
    * @param duration - Sustain length in seconds. Defaults to audioSettings.sustainLength.
    */
   playNote(note: string, octave: number = 4, duration?: number): void {
-    if (!this.audioContext || !this.guitarSynth) {
-      this.initialize().then(() => this.playNote(note, octave, duration));
-      return;
-    }
+    if (!this.whenReady(() => this.playNote(note, octave, duration))) return;
+    if (!this.audioContext || !this.guitarSynth) return;
     this.ensureRunning();
 
     // Derive MIDI from frequency so we stay on the same formula as stringFretToMidi
@@ -216,10 +290,8 @@ class AudioEngine {
     tuning: readonly number[] = STANDARD_TUNING,
     duration?: number
   ): void {
-    if (!this.audioContext || !this.guitarSynth) {
-      this.initialize().then(() => this.playNoteAtPosition(stringIndex, fret, tuning, duration));
-      return;
-    }
+    if (!this.whenReady(() => this.playNoteAtPosition(stringIndex, fret, tuning, duration))) return;
+    if (!this.audioContext || !this.guitarSynth) return;
     this.ensureRunning();
 
     const midi = stringFretToMidi(stringIndex, fret, tuning);
@@ -239,23 +311,38 @@ class AudioEngine {
    * loop then reads AudioContext.currentTime to drive the visual playhead
    * (onScaleNotePlay callback) without any setTimeout drift.
    *
+   * Each run gets its own bus (a GainNode into noteGain) so stopping or
+   * restarting can silence notes that are already scheduled.
+   *
+   * When the metronome is running the first note lands on its next beat, so
+   * the scale and the click share one grid; otherwise playback starts after a
+   * 100 ms head start.
+   *
    * @param midiNotes - Ordered array of MIDI note numbers to play.
    * @param bpm       - Playback tempo in beats per minute.
    */
   scheduleScalePlayback(midiNotes: number[], bpm: number): void {
-    if (!this.audioContext || !this.guitarSynth) {
-      this.initialize().then(() => this.scheduleScalePlayback(midiNotes, bpm));
-      return;
-    }
+    if (!this.whenReady(() => this.scheduleScalePlayback(midiNotes, bpm))) return;
+    const ctx = this.audioContext;
+    const synth = this.guitarSynth;
+    const out = this.noteGain;
+    if (!ctx || !synth || !out) return;
     this.ensureRunning();
-    this.stopScalePlayback();
+    this.stopScalePlayback(); // fades out and cuts any previous run
 
     this.beatDuration = 60 / bpm;
-    const startTime = this.audioContext.currentTime + 0.1; // 100 ms head start
+    const now = ctx.currentTime;
+    const startTime =
+      this.metronome?.getNextBeatTime(now + METRONOME_ALIGN_LEAD_S) ?? now + SCALE_START_LEAD_S;
+
+    const bus = ctx.createGain();
+    bus.gain.value = 1;
+    bus.connect(out);
+    this.runBus = bus;
 
     this.scheduledBeats = midiNotes.map((midi, i) => {
       const audioTime = startTime + i * this.beatDuration;
-      this.guitarSynth!.playNote(midi, audioTime, this.beatDuration * 0.85);
+      synth.playNote(midi, audioTime, this.beatDuration * 0.85, bus);
       return { index: i, audioTime };
     });
 
@@ -264,14 +351,19 @@ class AudioEngine {
   }
 
   /**
-   * Stop scale playback and cancel the rAF loop.
-   * Fires onScaleNotePlay(-1) to clear any highlighted note.
+   * Stop scale playback: silence the run (sounding and still-scheduled notes)
+   * and cancel the rAF loop. Fires onScaleNotePlay(-1) to clear any
+   * highlighted note.
    */
   stopScalePlayback(): void {
     this.scaleIsPlaying = false;
     if (this.rafHandle !== null) {
       cancelAnimationFrame(this.rafHandle);
       this.rafHandle = null;
+    }
+    if (this.runBus) {
+      this.releaseRunBus(this.runBus);
+      this.runBus = null;
     }
     this.scheduledBeats = [];
     if (this.onScaleNotePlay) this.onScaleNotePlay(-1);
@@ -308,10 +400,8 @@ class AudioEngine {
     timeSignature: [number, number] = [4, 4],
     accentFirst = true
   ): void {
-    if (!this.metronome) {
-      this.initialize().then(() => this.startMetronome(bpm, timeSignature, accentFirst));
-      return;
-    }
+    if (!this.whenReady(() => this.startMetronome(bpm, timeSignature, accentFirst))) return;
+    if (!this.metronome) return;
     this.ensureRunning();
     this.metronome.start(bpm, timeSignature, accentFirst);
   }
@@ -332,15 +422,21 @@ class AudioEngine {
   }
 
   /**
+   * AudioContext time of the metronome's next beat at or after `notBefore`,
+   * or null when the metronome is stopped.
+   */
+  getMetronomeNextBeatTime(notBefore?: number): number | null {
+    return this.metronome?.getNextBeatTime(notBefore) ?? null;
+  }
+
+  /**
    * Play a single metronome click immediately (for preview / tap-tempo).
    *
    * @param isAccent - Use the accent pitch/volume.
    */
   playClick(isAccent = false): void {
-    if (!this.audioContext || !this.metronomeGain) {
-      this.initialize().then(() => this.playClick(isAccent));
-      return;
-    }
+    if (!this.whenReady(() => this.playClick(isAccent))) return;
+    if (!this.audioContext || !this.metronomeGain) return;
     this.ensureRunning();
 
     const osc  = this.audioContext.createOscillator();
@@ -365,10 +461,17 @@ class AudioEngine {
     return this.audioContext?.state ?? 'uninitialized';
   }
 
-  /** Resume a suspended AudioContext (needed after the browser suspends it). */
+  /**
+   * Resume the AudioContext if it is suspended or (iOS Safari) interrupted.
+   * Never rejects; a refused resume is retried on the next user gesture.
+   */
   async resume(): Promise<void> {
-    if (this.audioContext?.state === 'suspended') {
-      await this.audioContext.resume();
+    const ctx = this.audioContext;
+    if (!ctx || ctx.state === 'running' || ctx.state === 'closed') return;
+    try {
+      await ctx.resume();
+    } catch {
+      /* not allowed outside a gesture; onContextStateChange re-arms */
     }
   }
 
@@ -376,9 +479,11 @@ class AudioEngine {
   dispose(): void {
     this.stopMetronome();
     this.stopScalePlayback();
+    this.disarmGestureResume();
 
     if (this.audioContext) {
-      this.audioContext.close();
+      this.audioContext.onstatechange = null;
+      this.audioContext.close().catch(() => {});
       this.audioContext = null;
     }
 
@@ -393,13 +498,82 @@ class AudioEngine {
   // ── Private helpers ────────────────────────────────────────────────────────
 
   /**
-   * Resume the AudioContext if the browser suspended it (common after page load
-   * or tab switch). Called before any audio output.
+   * Run `retry` once the engine is ready. Returns true when it already is
+   * (the caller carries on). Otherwise starts initialization, re-invokes
+   * `retry` only if it succeeds, and returns false. After a failed init it
+   * returns false without retrying, so a broken Web Audio can't loop.
+   */
+  private whenReady(retry: () => void): boolean {
+    if (this.isInitialized && this.audioContext) return true;
+    if (this.initFailed) return false;
+    void this.initialize().then((ok) => {
+      if (ok) retry();
+    });
+    return false;
+  }
+
+  /**
+   * Resume the AudioContext if it isn't running: 'suspended' after page load
+   * or a tab switch, or 'interrupted' on iOS after a call or Siri. Called
+   * before any audio output. A rejected resume (no user activation) is
+   * swallowed; the gesture listeners retry it.
    */
   private ensureRunning(): void {
-    if (this.audioContext?.state === 'suspended') {
-      this.audioContext.resume();
+    const ctx = this.audioContext;
+    if (!ctx || ctx.state === 'running' || ctx.state === 'closed') return;
+    ctx.resume().catch(() => {});
+  }
+
+  /** Arm or disarm the resume-on-gesture listeners to match the context state. */
+  private onContextStateChange(): void {
+    const state = this.audioContext?.state;
+    if (state === undefined || state === 'running' || state === 'closed') {
+      this.disarmGestureResume();
+    } else {
+      this.armGestureResume();
     }
+  }
+
+  /** Retry resume on every pointer/key press until the context runs again. */
+  private readonly resumeOnGesture = (): void => this.ensureRunning();
+
+  private armGestureResume(): void {
+    if (this.gestureResumeArmed || typeof window === 'undefined') return;
+    this.gestureResumeArmed = true;
+    // Capture phase so a handler that stops propagation can't block it.
+    window.addEventListener('pointerdown', this.resumeOnGesture, true);
+    window.addEventListener('keydown', this.resumeOnGesture, true);
+  }
+
+  private disarmGestureResume(): void {
+    if (!this.gestureResumeArmed) return;
+    this.gestureResumeArmed = false;
+    window.removeEventListener('pointerdown', this.resumeOnGesture, true);
+    window.removeEventListener('keydown', this.resumeOnGesture, true);
+  }
+
+  /**
+   * Fade a finished or abandoned run's bus to silence, then disconnect it,
+   * which cuts every note of that run still scheduled in the future. The
+   * linear ramp avoids the click of an instant cut on a sounding note.
+   */
+  private releaseRunBus(bus: GainNode): void {
+    const ctx = this.audioContext;
+    if (ctx) {
+      const now = ctx.currentTime;
+      bus.gain.cancelScheduledValues(now);
+      bus.gain.setValueAtTime(bus.gain.value, now);
+      bus.gain.linearRampToValueAtTime(0, now + RUN_FADE_S);
+    }
+    // Disconnect after the ramp has played out (a little slack for the
+    // wall clock vs. the audio clock). Harmless if the context closed.
+    window.setTimeout(() => {
+      try {
+        bus.disconnect();
+      } catch {
+        /* already disconnected */
+      }
+    }, RUN_FADE_S * 1000 + 40);
   }
 
   /**

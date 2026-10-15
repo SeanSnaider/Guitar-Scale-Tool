@@ -6,7 +6,9 @@ consecutive correct attempts at or above 120 BPM.
 """
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from .session import BPM_MAX, BPM_MIN
 
 
 class ScaleAttemptCreate(BaseModel):
@@ -19,10 +21,10 @@ class ScaleAttemptCreate(BaseModel):
         practice_session_id: Optional ID of the containing session.
     """
 
-    scale_key: str
-    bpm: int
+    scale_key: str = Field(min_length=1, max_length=64)
+    bpm: int = Field(ge=BPM_MIN, le=BPM_MAX)
     correct: bool
-    practice_session_id: str | None = None
+    practice_session_id: str | None = Field(None, max_length=64)
 
 
 class ScaleAttempt(BaseModel):

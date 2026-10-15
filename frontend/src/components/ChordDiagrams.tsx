@@ -8,7 +8,7 @@
  * Dependencies:
  * - useGuitarStore: selectedRoot, selectedScale
  * - audioEngine: playNote
- * - musicTheory: SCALES, getScaleNotes, getDiatonicChords, CHORD_TYPES, ALL_NOTES
+ * - musicTheory: SCALES, getScaleNotes, getDiatonicChords (stacked thirds), makeNoteNamer, ALL_NOTES
  */
 
 import { useState, useMemo } from 'react';
@@ -16,12 +16,15 @@ import { useGuitarStore } from '../store/useGuitarStore';
 import { audioEngine } from '../audio/AudioEngine';
 import {
   SCALES,
+  TUNINGS,
   getScaleNotes,
   getDiatonicChords,
-  CHORD_TYPES,
+  makeNoteNamer,
+  spellScale,
   ALL_NOTES,
 } from '../data/musicTheory';
-import { SegmentedControl, cn, PageTitle } from '../ui';
+import type { DiatonicChord } from '../data/musicTheory';
+import { Notice, SegmentedControl, cn, PageTitle } from '../ui';
 
 type ViewMode = 'boxes' | 'tab';
 
@@ -99,6 +102,14 @@ function getChordVoicing(root: string, chordType: string): number[] {
   if (chordType === 'minor') {
     return [-1, barFret, barFret + 2, barFret + 2, barFret + 1, barFret];
   }
+  // A-string-root shapes for the other triads (low E to high E):
+  // dim: root, b5 on D, octave on G, b3 on B; aug: root, #5 on D, octave on G, 3 on B
+  if (chordType === 'diminished') {
+    return [-1, barFret, barFret + 1, barFret + 2, barFret + 1, -1];
+  }
+  if (chordType === 'augmented') {
+    return [-1, barFret, barFret + 3, barFret + 2, barFret + 2, -1];
+  }
   return [-1, barFret, -1, -1, -1, -1];
 }
 
@@ -125,6 +136,10 @@ export default function ChordDiagrams() {
   const selectedRoot = useGuitarStore((s) => s.selectedRoot);
   const selectedScale = useGuitarStore((s) => s.selectedScale);
   const [viewMode, setViewMode] = useState<ViewMode>('boxes');
+  const tuning = useGuitarStore((s) => s.currentTuning);
+  const isStandardTuning = tuning.notes.join(',') === TUNINGS.standard.notes.join(',');
+  const nameOf = useMemo(() => makeNoteNamer(selectedRoot, selectedScale), [selectedRoot, selectedScale]);
+  const rootName = spellScale(selectedRoot, selectedScale)[0] ?? selectedRoot;
 
   const scale = SCALES[selectedScale];
 
@@ -137,14 +152,11 @@ export default function ChordDiagrams() {
   /**
    * Plays a chord as a staggered arpeggio via the global AudioEngine.
    *
-   * @param chordRoot - Root note of the chord.
-   * @param chordType - Quality key for the chord (e.g. "major").
+   * @param chord - The diatonic chord (root and triad intervals).
    */
-  const handlePlayChord = (chordRoot: string, chordType: string) => {
-    const chord = CHORD_TYPES[chordType];
-    if (!chord) return;
-
-    const chordNotes = getScaleNotes(chordRoot, chord.intervals);
+  const handlePlayChord = (chord: DiatonicChord) => {
+    // The chord's own stacked-third intervals, so unusual triads play correctly too
+    const chordNotes = getScaleNotes(chord.root, chord.intervals);
     chordNotes.forEach((note, i) => {
       setTimeout(() => {
         const noteIndex = ALL_NOTES.indexOf(note as typeof ALL_NOTES[number]);
@@ -159,7 +171,11 @@ export default function ChordDiagrams() {
     return (
       <div className="flex flex-col gap-5">
         <PageTitle>Chords</PageTitle>
-        <p className="text-sm text-muted">Select a scale to view chord diagrams</p>
+        <p className="text-sm text-muted">
+          {scale
+            ? `Diatonic chords are built by stacking thirds of a 7-note scale. ${scale.name} has ${scale.intervals.length} notes, so it has no diatonic chord set.`
+            : 'Select a scale to view chord diagrams'}
+        </p>
       </div>
     );
   }
@@ -168,7 +184,7 @@ export default function ChordDiagrams() {
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <PageTitle>
-          Chords in {selectedRoot} <span className="text-muted">{scale.name}</span>
+          Chords in {rootName} <span className="text-muted">{scale.name}</span>
         </PageTitle>
         <SegmentedControl
           ariaLabel="Chord view"
@@ -179,10 +195,17 @@ export default function ChordDiagrams() {
         />
       </div>
 
+      {!isStandardTuning && (
+        <Notice tone="info">
+          These diagrams use standard tuning (E A D G B E). Your current tuning is {tuning.name}, so the fret numbers
+          won't match your strings.
+        </Notice>
+      )}
+
       {viewMode === 'boxes' ? (
-        <ChordBoxesView chords={diatonicChords} onPlayChord={handlePlayChord} />
+        <ChordBoxesView chords={diatonicChords} onPlayChord={handlePlayChord} nameOf={nameOf} />
       ) : (
-        <ChordTabView chords={diatonicChords} onPlayChord={handlePlayChord} />
+        <ChordTabView chords={diatonicChords} onPlayChord={handlePlayChord} nameOf={nameOf} />
       )}
 
       <p className="text-xs text-muted">
@@ -196,8 +219,10 @@ export default function ChordDiagrams() {
 
 /** Props shared by the two chord view sub-components. */
 interface ChordViewProps {
-  chords: Array<{ root: string; degree: string; type: string; seventh: string }>;
-  onPlayChord: (root: string, type: string) => void;
+  chords: DiatonicChord[];
+  onPlayChord: (chord: DiatonicChord) => void;
+  /** Spells chord roots for the key (Bb, not A#). */
+  nameOf: (sharpName: string) => string;
 }
 
 const DIAGRAM_W = 70;
@@ -310,17 +335,17 @@ function ChordBox({ voicing, root }: { voicing: number[]; root: string }) {
  * @param chords - Array of diatonic chord descriptors.
  * @param onPlayChord - Callback when a chord card is clicked.
  */
-function ChordBoxesView({ chords, onPlayChord }: ChordViewProps) {
+function ChordBoxesView({ chords, onPlayChord, nameOf }: ChordViewProps) {
   return (
     <ul className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-3">
       {chords.map((chord, i) => {
         const voicing = getChordVoicing(chord.root, chord.type);
-        const name = `${chord.root}${CHORD_TYPES[chord.type]?.symbol || ''}`;
+        const name = `${nameOf(chord.root)}${chord.symbol}`;
         return (
           <li key={i}>
             <button
               type="button"
-              onClick={() => onPlayChord(chord.root, chord.type)}
+              onClick={() => onPlayChord(chord)}
               aria-label={`${name} ${chord.degree}, frets ${fretList(voicing)}`}
               title={`Play ${name}`}
               className="flex w-full flex-col items-center gap-2 rounded-panel border border-line bg-surface px-3 pt-3 pb-2 transition-colors duration-150 hover:border-control"
@@ -347,7 +372,7 @@ function ChordBoxesView({ chords, onPlayChord }: ChordViewProps) {
  * @param chords - Array of diatonic chord descriptors.
  * @param onPlayChord - Callback when a chord column is clicked.
  */
-function ChordTabView({ chords, onPlayChord }: ChordViewProps) {
+function ChordTabView({ chords, onPlayChord, nameOf }: ChordViewProps) {
   const stringNames = ['e', 'B', 'G', 'D', 'A', 'E'];
 
   return (
@@ -364,12 +389,12 @@ function ChordTabView({ chords, onPlayChord }: ChordViewProps) {
 
         {chords.map((chord, chordIdx) => {
           const voicing = getChordVoicing(chord.root, chord.type);
-          const name = `${chord.root}${CHORD_TYPES[chord.type]?.symbol || ''}`;
+          const name = `${nameOf(chord.root)}${chord.symbol}`;
           return (
             <button
               key={chordIdx}
               type="button"
-              onClick={() => onPlayChord(chord.root, chord.type)}
+              onClick={() => onPlayChord(chord)}
               aria-label={`${name} ${chord.degree}, frets ${fretList(voicing)}`}
               title={`Play ${name}`}
               className="group flex w-11 shrink-0 flex-col rounded-[4px] hover:bg-sunken"

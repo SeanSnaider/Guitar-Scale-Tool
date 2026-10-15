@@ -9,7 +9,12 @@ import { useScalePattern } from './useScalePattern';
  * `isPlayingScale`; this hook schedules the audio and publishes the sounding
  * note as `playingIndex` / `playingPosition` for the tab and fretboard.
  *
- * Also binds Space as a global play/stop shortcut when nothing is focused.
+ * Changing the scale, root, direction, tuning or tempo while playing
+ * restarts the run from the first note, so the ring and tab always describe
+ * the notes actually sounding.
+ *
+ * Also binds Space as a global play/stop shortcut on the Practice view when
+ * nothing is focused.
  */
 export function useScalePlayback(): { toggle: () => void } {
   const isPlaying = useGuitarStore((s) => s.isPlayingScale);
@@ -25,22 +30,24 @@ export function useScalePlayback(): { toggle: () => void } {
    * AudioContext initialisation; that -1 must not be read as "finished".
    */
   const startingRef = useRef(false);
-  /** Latest pattern, read inside the engine callback without re-binding it. */
-  const patternRef = useRef(pattern);
-  useEffect(() => {
-    patternRef.current = pattern;
-  }, [pattern]);
+  /**
+   * What the running schedule was built from, frozen when it was scheduled.
+   * The engine reports indices into *that* run, so the callback must map
+   * them through the same pattern (and string count), not the latest one.
+   * The midi array and bpm are kept to detect changes that need a restart.
+   */
+  const playingRef = useRef<{ pattern: typeof pattern; strings: number; midi: number[]; bpm: number } | null>(null);
 
   // Engine → store: which note is sounding
   useEffect(() => {
-    const strings = () => useGuitarStore.getState().currentTuning.strings;
     audioEngine.onScaleNotePlay = (index: number) => {
       const { setPlaying, setIsPlayingScale: setFlag } = useGuitarStore.getState();
       if (index >= 0) {
         startingRef.current = false;
-        const n = patternRef.current[index];
+        const run = playingRef.current;
+        const n = run?.pattern[index];
         // Tab order (0 = highest) → store order (0 = lowest)
-        setPlaying(index, n ? { string: strings() - 1 - n.string, fret: n.fret } : null);
+        setPlaying(index, run && n ? { string: run.strings - 1 - n.string, fret: n.fret } : null);
         return;
       }
       if (startingRef.current) return; // the engine's own reset while starting
@@ -57,22 +64,48 @@ export function useScalePlayback(): { toggle: () => void } {
     };
   }, []);
 
-  // Store → engine: start or stop when the shared flag changes
+  // Store → engine: start or stop when the shared flag changes, and restart
+  // from the top when the notes or tempo change mid-run.
   useEffect(() => {
+    const stop = () => {
+      scheduledRef.current = false;
+      startingRef.current = false;
+      playingRef.current = null;
+      audioEngine.stopScalePlayback(); // reports -1, which clears the ring
+    };
+    const schedule = () => {
+      playingRef.current = {
+        pattern,
+        strings: useGuitarStore.getState().currentTuning.strings,
+        midi,
+        bpm,
+      };
+      // Swallow the engine's own -1 from tearing down the previous run
+      startingRef.current = true;
+      scheduledRef.current = true;
+      audioEngine.scheduleScalePlayback(midi, bpm);
+    };
+
     if (isPlaying && !scheduledRef.current) {
       if (midi.length === 0) {
         setIsPlayingScale(false);
         return;
       }
-      startingRef.current = true;
-      scheduledRef.current = true;
-      audioEngine.scheduleScalePlayback(midi, bpm);
+      schedule();
     } else if (!isPlaying && scheduledRef.current) {
-      scheduledRef.current = false;
-      startingRef.current = false;
-      audioEngine.stopScalePlayback(); // reports -1, which clears the ring
+      stop();
+    } else if (isPlaying && scheduledRef.current) {
+      const run = playingRef.current;
+      if (run && run.midi === midi && run.bpm === bpm) return; // nothing changed
+      if (midi.length === 0) {
+        stop();
+        return;
+      }
+      // The old ring would linger until the new run's first note
+      useGuitarStore.getState().setPlaying(-1, null);
+      schedule();
     }
-  }, [isPlaying, midi, bpm, setIsPlayingScale]);
+  }, [isPlaying, midi, pattern, bpm, setIsPlayingScale]);
 
   const toggle = useCallback(
     () => setIsPlayingScale(!useGuitarStore.getState().isPlayingScale),
@@ -80,11 +113,16 @@ export function useScalePlayback(): { toggle: () => void } {
   );
 
   // Space: global play/stop, only when nothing is focused, so Space on a
-  // focused button, input or note keeps doing its native job.
+  // focused button, input or note keeps doing its native job. Practice view
+  // only: on other views focus falls back to <body> when a focused button is
+  // disabled or unmounted, and a keyboard user's next Space must not start
+  // the scale from a page that doesn't show it.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== 'Space' || e.repeat) return;
       if (e.target !== document.body && e.target !== document.documentElement) return;
+      const view = useGuitarStore.getState().activeTab;
+      if (view !== 'fretboard' && view !== 'reference') return;
       e.preventDefault();
       toggle();
     };

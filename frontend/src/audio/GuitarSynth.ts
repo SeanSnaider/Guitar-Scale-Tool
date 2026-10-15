@@ -51,8 +51,12 @@ export class GuitarSynth {
    * @param midi      - MIDI note number (e.g., 40 = E2, 64 = E4).
    * @param startTime - AudioContext time (seconds) to begin the note.
    * @param duration  - Total note duration in seconds (sustain + release included).
+   * @param destination - Node to connect the note's envelope to. Defaults to the
+   *                    synth's output. Scale playback passes a per-run bus here
+   *                    so the whole run can be faded out and cut on Stop, since
+   *                    individual notes keep no handle once scheduled.
    */
-  playNote(midi: number, startTime: number, duration: number): void {
+  playNote(midi: number, startTime: number, duration: number, destination: AudioNode = this.output): void {
     const frequency = midiToFrequency(midi);
 
     // ── Oscillators ──────────────────────────────────────────────────────────
@@ -104,7 +108,7 @@ export class GuitarSynth {
     osc3.connect(osc3Level);
     osc3Level.connect(filter);
     filter.connect(env);
-    env.connect(this.output);
+    env.connect(destination);
 
     // ── Scheduling ───────────────────────────────────────────────────────────
     const stopTime = releaseEnd + 0.05; // small tail buffer
