@@ -4,7 +4,7 @@ A browser-based guitar practice app that listens to what you play. Strum a chord
 your mic and it names it, using FFT analysis in the browser with no backend inference and
 no ML model.
 
-https://guitar-scale-tool.onrender.com/
+https://scaleteacher.onrender.com/
 ---
 
 ## Why I built it
