@@ -211,3 +211,66 @@ class TestMasteryQueries:
         response = await client.get("/scales/learned")
         assert response.status_code == 200
         assert response.json()["data"] == []
+
+
+class TestAttemptValidation:
+    """Request bounds on POST /scales/attempt."""
+
+    async def test_bpm_bounds(self, client):
+        for bpm in (19, 401):
+            response = await client.post(
+                "/scales/attempt",
+                json={"scale_key": "C_major", "bpm": bpm, "correct": True},
+            )
+            assert response.status_code == 422, bpm
+
+    async def test_scale_key_length(self, client):
+        for key in ("", "x" * 65):
+            response = await client.post(
+                "/scales/attempt",
+                json={"scale_key": key, "bpm": 120, "correct": True},
+            )
+            assert response.status_code == 422
+
+
+class TestAttemptRace:
+    """A concurrent first insert on the same scale_key is retried as an update."""
+
+    async def test_integrity_error_is_retried(self, client, monkeypatch):
+        from app.routers import scales as scales_router
+
+        # Seed the mastery row, then make the next lookup miss it once, as if
+        # another request inserted it between this request's read and commit.
+        await client.post(
+            "/scales/attempt",
+            json={"scale_key": "C_major", "bpm": 120, "correct": True},
+        )
+
+        real_apply = scales_router._apply_attempt
+        calls = {"n": 0}
+
+        async def racing_apply(db, body, now):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                real_scalar = db.scalar
+
+                async def miss_once(*args, **kwargs):
+                    db.scalar = real_scalar
+                    return None
+
+                db.scalar = miss_once
+            return await real_apply(db, body, now)
+
+        monkeypatch.setattr(scales_router, "_apply_attempt", racing_apply)
+
+        response = await client.post(
+            "/scales/attempt",
+            json={"scale_key": "C_major", "bpm": 120, "correct": True},
+        )
+        assert response.status_code == 200
+        assert calls["n"] == 2
+        mastery = response.json()["data"]["mastery"]
+        assert mastery["total_attempts"] == 2
+        assert mastery["consecutive_correct"] == 2
+        assert len(mastery["attempts"]) == 2
+        assert mastery["created_at"].endswith(("Z", "+00:00"))

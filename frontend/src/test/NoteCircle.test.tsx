@@ -9,6 +9,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import NoteCircle from '../components/fretboard/NoteCircle';
+import { NOTE_SIZE } from '../components/fretboard/noteSizes';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -108,69 +109,75 @@ describe('NoteCircle click interaction', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// isHighlighted styling
+// isHighlighted styling (a box-shadow ring, so it never collides with focus)
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('NoteCircle isHighlighted prop', () => {
-  it('applies box-shadow style when isHighlighted is true', () => {
+  it('adds the highlight ring class when isHighlighted is true', () => {
     renderCircle({ isHighlighted: true });
-    const btn = screen.getByRole('button');
-    // box-shadow should be set (not undefined / empty)
-    expect(btn.style.boxShadow).toBeTruthy();
+    expect(screen.getByRole('button').className).toContain('shadow-[');
   });
 
-  it('has no box-shadow when isHighlighted is false (default)', () => {
+  it('has no highlight ring when isHighlighted is false or omitted', () => {
     renderCircle({ isHighlighted: false });
-    const btn = screen.getByRole('button');
-    expect(btn.style.boxShadow).toBeFalsy();
-  });
-
-  it('has no box-shadow when isHighlighted prop is omitted', () => {
-    renderCircle();
-    const btn = screen.getByRole('button');
-    expect(btn.style.boxShadow).toBeFalsy();
+    expect(screen.getAllByRole('button')[0].className).not.toContain('shadow-[');
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Variant-specific styles
+// Variant-specific styles (monochrome world: orange only for roots/playing)
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('NoteCircle variant styles', () => {
-  it('root variant gets a larger size than scale variant', () => {
-    const { container: rootContainer } = render(
-      <NoteCircle note="C" displayText="C" variant="root" />
-    );
-    const { container: scaleContainer } = render(
-      <NoteCircle note="C" displayText="C" variant="scale" />
-    );
-
-    const rootBtn = rootContainer.querySelector('button') as HTMLButtonElement;
-    const scaleBtn = scaleContainer.querySelector('button') as HTMLButtonElement;
-
-    const rootWidth = parseInt(rootBtn.style.width, 10);
-    const scaleWidth = parseInt(scaleBtn.style.width, 10);
-
-    expect(rootWidth).toBeGreaterThan(scaleWidth);
+  it('root variant is larger than the scale variant', () => {
+    expect(NOTE_SIZE.root).toBeGreaterThan(NOTE_SIZE.scale);
   });
 
-  it('muted variant has a border', () => {
-    renderCircle({ variant: 'muted' });
-    const btn = screen.getByRole('button');
-    expect(btn.style.border).not.toBe('none');
-  });
-
-  it('scale variant has no solid border color', () => {
-    // jsdom normalises `border: 'none'` as borderStyle=none, not `border='none'`
-    renderCircle({ variant: 'scale' });
-    const btn = screen.getByRole('button');
-    expect(btn.style.borderStyle).not.toBe('solid');
-  });
-
-  it('root variant has no solid border color', () => {
+  it('root uses the accent fill with ink text', () => {
     renderCircle({ variant: 'root' });
+    const cls = screen.getByRole('button').className;
+    expect(cls).toContain('bg-accent');
+    expect(cls).toContain('text-on-accent');
+  });
+
+  it('scale notes are ink with white labels, never orange', () => {
+    renderCircle({ variant: 'scale' });
+    const cls = screen.getByRole('button').className;
+    expect(cls).toContain('bg-ink');
+    expect(cls).not.toContain('bg-accent');
+  });
+
+  it('muted variant is a bare label on the board (no ring)', () => {
+    renderCircle({ variant: 'muted' });
+    const cls = screen.getByRole('button').className;
+    expect(cls).toContain('bg-board');
+    expect(cls).not.toContain('ring-');
+  });
+
+  it('dimmed notes are drawn hollow with a ring', () => {
+    renderCircle({ variant: 'scale', dimmed: true });
     const btn = screen.getByRole('button');
-    expect(btn.style.borderStyle).not.toBe('solid');
+    expect(btn.className).toContain('ring-');
+    expect(btn.className).toContain('bg-board');
+    expect(btn.hasAttribute('data-dimmed')).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Playing ring
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('NoteCircle playing ring', () => {
+  it('draws the playing ring when isPlaying is true', () => {
+    renderCircle({ isPlaying: true });
+    const btn = screen.getByRole('button');
+    expect(btn.hasAttribute('data-playing')).toBe(true);
+    expect(btn.querySelector('.ring-land')).not.toBeNull();
+  });
+
+  it('has no playing ring by default', () => {
+    renderCircle();
+    expect(screen.getByRole('button').querySelector('.ring-land')).toBeNull();
   });
 });
 

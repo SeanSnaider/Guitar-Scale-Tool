@@ -590,12 +590,11 @@ describe('CAGED_POSITIONS', () => {
     expect(ids).toEqual([1, 2, 3, 4, 5]);
   });
 
-  it('each position has a name, startFret, endFret, color', () => {
+  it('each position has a name and a root-relative fret window', () => {
     CAGED_POSITIONS.forEach((pos) => {
       expect(typeof pos.name).toBe('string');
-      expect(typeof pos.startFret).toBe('number');
-      expect(typeof pos.endFret).toBe('number');
-      expect(typeof pos.color).toBe('string');
+      expect(pos.startFret).toBeGreaterThanOrEqual(0);
+      expect(pos.endFret).toBeGreaterThan(pos.startFret);
     });
   });
 });

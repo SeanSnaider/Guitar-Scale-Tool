@@ -155,3 +155,134 @@ class TestGetSession:
         """A malformed (non-ObjectId) session ID returns 422 or 404."""
         response = await client.get("/sessions/not-a-valid-id")
         assert response.status_code in (404, 422)
+
+
+OTHER_CLIENT = {"X-Session-ID": "someone-else-456"}
+
+
+class TestSessionScoping:
+    """Sessions are scoped to the caller's X-Session-ID header."""
+
+    async def test_list_only_returns_callers_sessions(self, client):
+        """GET /sessions counts and returns only the caller's own sessions."""
+        await client.post("/sessions/start", json={"bpm": 100})
+        await client.post("/sessions/start", json={"bpm": 150}, headers=OTHER_CLIENT)
+
+        mine = (await client.get("/sessions")).json()
+        assert mine["meta"]["total"] == 1
+        assert [s["bpm"] for s in mine["data"]] == [100]
+        assert {s["session_id"] for s in mine["data"]} == {"test-session-123"}
+
+        theirs = (await client.get("/sessions", headers=OTHER_CLIENT)).json()
+        assert theirs["meta"]["total"] == 1
+        assert {s["session_id"] for s in theirs["data"]} == {"someone-else-456"}
+
+    async def test_get_other_clients_session_is_404(self, client):
+        """GET /sessions/{id} for another client's row returns 404."""
+        sid = (await client.post("/sessions/start", json={})).json()["data"]["id"]
+        response = await client.get(f"/sessions/{sid}", headers=OTHER_CLIENT)
+        assert response.status_code == 404
+        assert "test-session-123" not in response.text
+
+    async def test_end_other_clients_session_is_404_and_unchanged(self, client):
+        """POST /sessions/{id}/end for another client's row returns 404 and does not end it."""
+        sid = (await client.post("/sessions/start", json={})).json()["data"]["id"]
+        response = await client.post(
+            f"/sessions/{sid}/end", json={"accuracy": 0.5}, headers=OTHER_CLIENT
+        )
+        assert response.status_code == 404
+        data = (await client.get(f"/sessions/{sid}")).json()["data"]
+        assert data["ended_at"] is None
+        assert data["accuracy"] is None
+
+
+class TestEndSessionTwice:
+    """Ending an already-ended session is a no-op."""
+
+    async def test_second_end_returns_row_unchanged(self, client):
+        sid = (await client.post("/sessions/start", json={})).json()["data"]["id"]
+        first = await client.post(f"/sessions/{sid}/end", json={"accuracy": 0.9})
+        assert first.status_code == 200
+        second = await client.post(f"/sessions/{sid}/end", json={"accuracy": 0.1})
+        assert second.status_code == 200
+        assert second.json()["data"] == first.json()["data"]
+        assert second.json()["data"]["accuracy"] == 0.9
+
+
+class TestSessionTimestamps:
+    """Serialised timestamps carry an explicit UTC offset."""
+
+    async def test_started_and_ended_at_are_utc(self, client):
+        sid = (await client.post("/sessions/start", json={})).json()["data"]["id"]
+        await client.post(f"/sessions/{sid}/end", json={})
+        data = (await client.get(f"/sessions/{sid}")).json()["data"]
+        assert data["started_at"].endswith(("Z", "+00:00"))
+        assert data["ended_at"].endswith(("Z", "+00:00"))
+
+        listed = (await client.get("/sessions")).json()["data"][0]
+        assert listed["started_at"].endswith(("Z", "+00:00"))
+
+
+class TestSessionValidation:
+    """Pagination, body, path and header bounds are enforced as 4xx, never 500."""
+
+    async def test_pagination_bounds(self, client):
+        for query in ("page=0", "page=-1", "limit=0", "limit=101", "limit=-1"):
+            response = await client.get(f"/sessions?{query}")
+            assert response.status_code == 422, query
+
+    async def test_pagination_limit_max_ok(self, client):
+        response = await client.get("/sessions?limit=100")
+        assert response.status_code == 200
+
+    async def test_huge_page_is_rejected_not_500(self, client):
+        response = await client.get(f"/sessions?page={10**20}")
+        assert response.status_code == 422
+
+    async def test_bpm_bounds(self, client):
+        for bpm in (19, 401, 0, -5):
+            response = await client.post("/sessions/start", json={"bpm": bpm})
+            assert response.status_code == 422, bpm
+        for bpm in (20, 400):
+            response = await client.post("/sessions/start", json={"bpm": bpm})
+            assert response.status_code == 200, bpm
+
+    async def test_accuracy_bounds(self, client):
+        sid = (await client.post("/sessions/start", json={})).json()["data"]["id"]
+        for accuracy in (-0.01, 1.01, 5):
+            response = await client.post(
+                f"/sessions/{sid}/end", json={"accuracy": accuracy}
+            )
+            assert response.status_code == 422, accuracy
+
+    async def test_scales_practiced_limits(self, client):
+        too_many = [f"s{i}" for i in range(51)]
+        assert (
+            await client.post("/sessions/start", json={"scales_practiced": too_many})
+        ).status_code == 422
+        assert (
+            await client.post("/sessions/start", json={"scales_practiced": ["x" * 65]})
+        ).status_code == 422
+        assert (
+            await client.post("/sessions/start", json={"scales_practiced": [""]})
+        ).status_code == 422
+
+    async def test_id_above_int64_is_404(self, client):
+        for raw in (str(2**63), "99999999999999999999"):
+            assert (await client.get(f"/sessions/{raw}")).status_code == 404
+            assert (
+                await client.post(f"/sessions/{raw}/end", json={})
+            ).status_code == 404
+
+    async def test_session_header_length(self, client):
+        assert (
+            await client.get("/sessions", headers={"X-Session-ID": "x" * 65})
+        ).status_code == 422
+        assert (
+            await client.post(
+                "/sessions/start", json={}, headers={"X-Session-ID": ""}
+            )
+        ).status_code == 422
+        assert (
+            await client.get("/sessions", headers={"X-Session-ID": "x" * 64})
+        ).status_code == 200

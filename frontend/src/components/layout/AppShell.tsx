@@ -1,292 +1,124 @@
 /**
  * AppShell.tsx
  *
- * Root layout component for the Guitar Scale Tool application.
+ * The app's frame:
+ *   - >=1024px: left rail (SideNav) | the current view, transport bar fixed
+ *     along the bottom of the view column.
+ *   - 768-1023px: SideNav becomes a top bar.
+ *   - <768px: compact header on top, transport bar above a bottom tab bar.
  *
- * Responsibilities:
- *  - Renders the sticky `<NavBar />` at the top of every page.
- *  - Renders the correct tab content based on `activeTab` from the global store.
- *  - On the Fretboard tab at ≥1024 px, displays a three-zone layout:
- *      [FretboardControls full-width]
- *      [Fretboard + Tablature] | [ReferencePanel sidebar 320 px]
- *      [FooterInfoBar full-width]
- *  - At <1024 px on the Fretboard tab, the Reference panel is hidden; it is
- *    only accessible via its own "Reference" navigation tab.
- *  - ChordAI and ProgressDashboard are code-split (React.lazy) to keep the
- *    initial bundle small.
- *  - `<AudioControlsShelf />` is always mounted at the document root level so
- *    its slide-up animation is not clipped by any parent scroll container.
- *
- * @module layout/AppShell
+ * Every view renders inside one <main> with a visually hidden <h1> naming it.
+ * ChordAI and Progress are code-split (React.lazy).
  */
-
-import React, { Suspense } from 'react';
+import React, { Suspense, useEffect, useRef } from 'react';
 import { useGuitarStore } from '../../store/useGuitarStore';
-import NavBar from './NavBar';
+import { SideNav } from '../shell/SideNav';
+import { MobileHeader, MobileTabBar } from '../shell/MobileTabBar';
+import { TransportBar } from '../shell/TransportBar';
+import { navItemFor } from '../shell/navItems';
+import PracticeView from '../../views/PracticeView';
+import LibraryView from '../../views/LibraryView';
+import EarTrainingView from '../ear-training/EarTrainingView';
 
-// ---- Eagerly imported components ----
-import Fretboard from '../Fretboard';
-import Tablature from '../Tablature';
-import ChordDiagrams from '../ChordDiagrams';
-import FretboardControls from '../FretboardControls';
-import FooterInfoBar from '../FooterInfoBar';
-import ReferencePanel from '../ReferencePanel';
-import ScalesBrowser from '../ScalesBrowser';
-import EarTrainingView from '../EarTrainingView';
-import AudioControlsShelf from '../AudioControlsShelf';
-
-// ---- Code-split components (lazy-loaded) ----
-// These are loaded on demand to keep the initial JS bundle lean.
-
-/**
- * Lazily loaded ChordAI tab — heavy AI/audio inference logic bundled separately.
- */
 const ChordAI = React.lazy(() => import('../ChordAI'));
-
-/**
- * Lazily loaded ProgressDashboard — chart dependencies bundled separately.
- */
 const ProgressDashboard = React.lazy(() => import('../ProgressDashboard'));
 
-// ---- Sub-components ----
-
-/**
- * TabLoadingFallback
- *
- * Shown inside `<Suspense>` while a lazily loaded tab component is being
- * fetched.  Matches the app background so there is no jarring flash.
- *
- * @returns A full-width placeholder div.
- */
-function TabLoadingFallback() {
+/** Shown while a code-split view loads. */
+function ViewLoading() {
   return (
-    <div
-      style={{
-        minHeight: '200px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: 'var(--text-muted)',
-        fontSize: '13px',
-      }}
-      aria-busy="true"
-      aria-label="Loading…"
-    >
+    <p aria-busy="true" className="py-16 text-center text-[13px] text-muted">
       Loading…
+    </p>
+  );
+}
+
+/** Standard padding and measure for every view except Practice (edge to edge). */
+function ViewFrame({ children, narrow = false }: { children: React.ReactNode; narrow?: boolean }) {
+  return (
+    <div className={`mx-auto w-full px-[var(--gutter)] pt-6 pb-8 ${narrow ? 'max-w-[760px]' : 'max-w-[1120px]'}`}>
+      {children}
     </div>
   );
 }
 
-// ---- Layout helpers ----
-
-/** Common max-width wrapper applied to every tab's content area. */
-const CONTENT_STYLE: React.CSSProperties = {
-  maxWidth: '1600px',
-  margin: '0 auto',
-  padding: '16px',
-};
-
-/**
- * FretboardTabContent
- *
- * The Fretboard tab layout:
- *  - FretboardControls spans full width.
- *  - Below that: a flex row containing the main fretboard area and (on ≥1024 px)
- *    a fixed-width ReferencePanel sidebar.
- *  - FooterInfoBar spans full width at the bottom.
- *
- * @returns The rendered fretboard tab content.
- */
-function FretboardTabContent() {
-  return (
-    <div style={CONTENT_STYLE}>
-      {/* Full-width controls bar */}
-      <FretboardControls />
-
-      {/* Two-column layout at desktop breakpoint */}
-      <div
-        style={{
-          display: 'flex',
-          gap: '16px',
-          alignItems: 'flex-start',
-        }}
-      >
-        {/* Main fretboard + tablature column */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div
-            style={{
-              background: 'var(--bg-surface)',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: '8px',
-              padding: '12px',
-              overflowX: 'auto',
-            }}
-          >
-            <Fretboard />
-          </div>
-
-          <div style={{ marginTop: '12px' }}>
-            <Tablature />
-          </div>
-        </div>
-
-        {/* Reference panel sidebar — visible only at ≥1024 px via CSS */}
-        <div
-          className="hidden lg:block"
-          style={{
-            width: '320px',
-            flexShrink: 0,
-          }}
-        >
-          <ReferencePanel />
-        </div>
-      </div>
-
-      {/* Full-width footer info */}
-      <FooterInfoBar />
-    </div>
-  );
-}
-
-/**
- * ScalesTabContent
- *
- * Renders the searchable scale library browser.
- *
- * @returns The rendered scales tab content.
- */
-function ScalesTabContent() {
-  return (
-    <main style={CONTENT_STYLE}>
-      <ScalesBrowser />
-    </main>
-  );
-}
-
-/**
- * ChordsTabContent
- *
- * Renders the chord diagrams tab.
- *
- * @returns The rendered chords tab content.
- */
-function ChordsTabContent() {
-  return (
-    <main style={CONTENT_STYLE}>
-      <ChordDiagrams />
-    </main>
-  );
-}
-
-/**
- * EarTrainingTabContent
- *
- * Renders the ear training exercises tab.
- *
- * @returns The rendered ear training tab content.
- */
-function EarTrainingTabContent() {
-  return (
-    <main style={CONTENT_STYLE}>
-      <EarTrainingView />
-    </main>
-  );
-}
-
-/**
- * ReferenceTabContent
- *
- * Renders the reference panel as a full page on narrow screens where it is
- * not shown as a sidebar.  On wide screens a user would typically navigate
- * here from the Fretboard tab's sidebar.
- *
- * @returns The rendered reference tab content.
- */
-function ReferenceTabContent() {
-  return (
-    <main style={CONTENT_STYLE}>
-      <ReferencePanel />
-    </main>
-  );
-}
-
-/**
- * ProgressTabContent
- *
- * Renders the lazily loaded progress dashboard.
- *
- * @returns The rendered progress tab content wrapped in a Suspense boundary.
- */
-function ProgressTabContent() {
-  return (
-    <main style={CONTENT_STYLE}>
-      <Suspense fallback={<TabLoadingFallback />}>
-        <ProgressDashboard />
-      </Suspense>
-    </main>
-  );
-}
-
-/**
- * ChordAITabContent
- *
- * Renders the lazily loaded ChordAI feature tab.
- *
- * @returns The rendered ChordAI tab content wrapped in a Suspense boundary.
- */
-function ChordAITabContent() {
-  return (
-    <main style={CONTENT_STYLE}>
-      <Suspense fallback={<TabLoadingFallback />}>
-        <ChordAI />
-      </Suspense>
-    </main>
-  );
-}
-
-// ---- Main component ----
-
-/**
- * AppShell
- *
- * The top-level layout wrapper for the entire Guitar Scale Tool UI.
- * Composes the navigation bar, active tab content, and the always-present
- * audio controls shelf into a single cohesive layout.
- *
- * @returns The full application shell element.
- */
 function AppShell() {
   const activeTab = useGuitarStore((s) => s.activeTab);
+  const view = navItemFor(activeTab);
+
+  // Name the current view in the browser tab
+  useEffect(() => {
+    document.title = `${view.label} · Scale Teacher`;
+  }, [view.label]);
+
+  // On a view change (nav, or programmatic: Library "Load on fretboard",
+  // Progress "Practice"), start the new view at the top and move focus to
+  // <main> so keyboard and screen reader users land in the new content
+  // instead of on a control that no longer exists. Skipped on first render.
+  const mainRef = useRef<HTMLElement>(null);
+  const prevViewId = useRef(view.id);
+  useEffect(() => {
+    if (prevViewId.current === view.id) return;
+    prevViewId.current = view.id;
+    window.scrollTo(0, 0);
+    mainRef.current?.focus({ preventScroll: true });
+  }, [view.id]);
+
+  let content: React.ReactNode;
+  switch (view.id) {
+    case 'ear-training':
+      content = (
+        <ViewFrame narrow>
+          <EarTrainingView />
+        </ViewFrame>
+      );
+      break;
+    case 'chordai':
+      content = (
+        <ViewFrame narrow>
+          <Suspense fallback={<ViewLoading />}>
+            <ChordAI />
+          </Suspense>
+        </ViewFrame>
+      );
+      break;
+    case 'library':
+      content = (
+        <ViewFrame>
+          <LibraryView />
+        </ViewFrame>
+      );
+      break;
+    case 'progress':
+      content = (
+        <ViewFrame>
+          <Suspense fallback={<ViewLoading />}>
+            <ProgressDashboard />
+          </Suspense>
+        </ViewFrame>
+      );
+      break;
+    default:
+      content = <PracticeView />;
+  }
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background: 'var(--bg-primary)',
-        color: 'var(--text-body)',
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-    >
-      {/* Sticky navigation */}
-      <NavBar />
-
-      {/* Tab content area */}
-      <div style={{ flex: 1 }}>
-        {activeTab === 'fretboard' && <FretboardTabContent />}
-        {activeTab === 'scales' && <ScalesTabContent />}
-        {activeTab === 'chords' && <ChordsTabContent />}
-        {activeTab === 'ear-training' && <EarTrainingTabContent />}
-        {activeTab === 'reference' && <ReferenceTabContent />}
-        {activeTab === 'progress' && <ProgressTabContent />}
-        {activeTab === 'chordai' && <ChordAITabContent />}
-      </div>
-
-      {/*
-        Audio controls shelf — always mounted so its open/close animation
-        works correctly.  Manages its own visibility via isAudioShelfOpen.
-      */}
-      <AudioControlsShelf />
+    <div className="min-h-dvh bg-ground lg:grid lg:grid-cols-[var(--rail-w)_minmax(0,1fr)]">
+      <a className="skip-link" href="#main-content">
+        Skip to content
+      </a>
+      <SideNav />
+      <MobileHeader />
+      <main
+        ref={mainRef}
+        id="main-content"
+        tabIndex={-1}
+        className="min-w-0 pb-[calc(var(--transport-h)+var(--tabbar-h)+env(safe-area-inset-bottom))] md:pb-[calc(var(--transport-h)+env(safe-area-inset-bottom))]"
+      >
+        <h1 className="sr-only">{view.label}</h1>
+        {content}
+      </main>
+      <TransportBar />
+      <MobileTabBar />
     </div>
   );
 }

@@ -10,6 +10,11 @@ from pydantic import BaseModel
 
 T = TypeVar("T")
 
+# Bounds for ``page``/``limit`` query parameters on list endpoints.  MAX_PAGE
+# keeps ``(page - 1) * limit`` well inside SQLite's 64-bit OFFSET range.
+MAX_LIMIT = 100
+MAX_PAGE = 1_000_000
+
 
 class PaginationMeta(BaseModel):
     """Metadata attached to paginated list responses.

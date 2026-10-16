@@ -6,10 +6,11 @@ provides ``get_database`` as a FastAPI dependency that yields one
 ``AsyncSession`` per request.
 """
 from collections.abc import AsyncGenerator
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import Boolean, DateTime, Float, Index, Integer, String
+from sqlalchemy.types import TypeDecorator
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -18,6 +19,34 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from .config import settings
+
+
+class UTCDateTime(TypeDecorator):
+    """A ``DateTime`` column that always round-trips as timezone-aware UTC.
+
+    SQLite has no timezone support, so a plain ``DateTime`` column silently
+    drops ``tzinfo`` and hands back naive datetimes, which then serialise
+    without an offset (and browsers read them as local time).  This
+    decorator normalises aware values to UTC before storage and re-attaches
+    ``timezone.utc`` on load.  The underlying column type is unchanged, so
+    there is no schema change and existing rows (stored as naive UTC) load
+    correctly.
+    """
+
+    impl = DateTime
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        """Store as naive UTC (aware values are converted to UTC first)."""
+        if value is not None and value.tzinfo is not None:
+            value = value.astimezone(timezone.utc).replace(tzinfo=None)
+        return value
+
+    def process_result_value(self, value, dialect):
+        """Attach UTC to values read back from the database."""
+        if value is not None and value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value
 
 
 class Base(DeclarativeBase):
@@ -46,8 +75,8 @@ class PracticeSession(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[str] = mapped_column(String, nullable=False)
-    started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
+    ended_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime, nullable=True)
     duration_seconds: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     scales_practiced: Mapped[str] = mapped_column(
         String, nullable=False, default="[]"
@@ -79,7 +108,7 @@ class ChordDetection(Base):
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
     root: Mapped[str] = mapped_column(String, nullable=False)
     quality: Mapped[str] = mapped_column(String, nullable=False)
-    detected_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    detected_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
     practice_session_id: Mapped[Optional[str]] = mapped_column(
         String, nullable=True
     )
@@ -109,10 +138,10 @@ class ScaleMastery(Base):
         Integer, nullable=False, default=0
     )
     is_learned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    learned_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    learned_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime, nullable=True)
     total_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
 
 
 class ScaleAttemptRow(Base):
@@ -138,7 +167,7 @@ class ScaleAttemptRow(Base):
     scale_key: Mapped[str] = mapped_column(String, nullable=False)
     correct: Mapped[bool] = mapped_column(Boolean, nullable=False)
     bpm: Mapped[int] = mapped_column(Integer, nullable=False)
-    attempted_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    attempted_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
     practice_session_id: Mapped[Optional[str]] = mapped_column(
         String, nullable=True
     )

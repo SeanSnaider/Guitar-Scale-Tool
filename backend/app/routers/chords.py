@@ -5,7 +5,7 @@ list and aggregated statistics queries.
 """
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,8 +17,16 @@ from ..models.chord import (
     ChordRecordResponse,
     ChordStatsResponse,
 )
-from ..models.common import ApiResponse, PaginatedResponse, PaginationMeta
+from ..models.common import (
+    MAX_LIMIT,
+    MAX_PAGE,
+    ApiResponse,
+    PaginatedResponse,
+    PaginationMeta,
+)
 
+# Chord history is shared across all clients (the table has no owner
+# column); only /sessions is scoped to the caller's X-Session-ID.
 router = APIRouter(prefix="/chords", tags=["chords"])
 
 
@@ -148,15 +156,15 @@ async def get_chord_stats(
 
 @router.get("", response_model=PaginatedResponse[ChordRecordResponse])
 async def list_chords(
-    page: int = 1,
-    limit: int = 20,
+    page: int = Query(1, ge=1, le=MAX_PAGE),
+    limit: int = Query(20, ge=1, le=MAX_LIMIT),
     db: AsyncSession = Depends(get_database),
 ) -> PaginatedResponse[ChordRecordResponse]:
     """List chord detection records, newest first.
 
     Args:
         page: 1-based page number (default 1).
-        limit: Maximum items per page (default 20).
+        limit: Maximum items per page (default 20, max 100).
         db: Injected SQLAlchemy async session.
 
     Returns:

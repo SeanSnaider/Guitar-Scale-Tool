@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import ScaleAttemptRow, ScaleMastery, get_database
@@ -24,6 +25,8 @@ from ..models.scale import (
     ScaleMasteryResponse,
 )
 
+# Scale mastery is shared across all clients (the table has no owner
+# column); only /sessions is scoped to the caller's X-Session-ID.
 router = APIRouter(prefix="/scales", tags=["scales"])
 
 # Minimum BPM required to count towards the learned threshold.
@@ -90,31 +93,19 @@ async def _fetch_attempts(
     ).all()
 
 
-@router.post("/attempt", response_model=ApiResponse[ScaleAttemptResponse])
-async def record_attempt(
-    body: ScaleAttemptCreate,
-    db: AsyncSession = Depends(get_database),
-) -> ApiResponse[ScaleAttemptResponse]:
-    """Record a single scale practice attempt and update mastery state.
-
-    Business logic applied in order:
-    1. Insert a new ScaleAttemptRow.
-    2. If correct and bpm >= 120: increment consecutive_correct.
-       Otherwise: reset consecutive_correct to 0.
-    3. If the scale is not yet learned and consecutive_correct >= 3:
-       set is_learned=True, learned_at=now, just_learned=True.
-    4. is_learned is sticky — an incorrect attempt cannot clear it.
+async def _apply_attempt(
+    db: AsyncSession, body: ScaleAttemptCreate, now: datetime
+) -> tuple[ScaleMastery, bool]:
+    """Stage one attempt and its mastery update on ``db`` (no commit).
 
     Args:
-        body: Attempt details including scale_key, bpm, correct flag.
-        db: Injected SQLAlchemy async session.
+        db: Active async session.
+        body: The attempt being recorded.
+        now: Timestamp to use for the attempt and mastery update.
 
     Returns:
-        ApiResponse containing the updated mastery document and
-        just_learned flag.
+        A tuple of (mastery row, just_learned flag).
     """
-    now = datetime.now(timezone.utc)
-
     existing: ScaleMastery | None = await db.scalar(
         select(ScaleMastery).where(ScaleMastery.scale_key == body.scale_key)
     )
@@ -166,7 +157,45 @@ async def record_attempt(
         existing.updated_at = now
         mastery = existing
 
-    await db.commit()
+    return mastery, just_learned
+
+
+@router.post("/attempt", response_model=ApiResponse[ScaleAttemptResponse])
+async def record_attempt(
+    body: ScaleAttemptCreate,
+    db: AsyncSession = Depends(get_database),
+) -> ApiResponse[ScaleAttemptResponse]:
+    """Record a single scale practice attempt and update mastery state.
+
+    Business logic applied in order:
+    1. Insert a new ScaleAttemptRow.
+    2. If correct and bpm >= 120: increment consecutive_correct.
+       Otherwise: reset consecutive_correct to 0.
+    3. If the scale is not yet learned and consecutive_correct >= 3:
+       set is_learned=True, learned_at=now, just_learned=True.
+    4. is_learned is sticky — an incorrect attempt cannot clear it.
+
+    Args:
+        body: Attempt details including scale_key, bpm, correct flag.
+        db: Injected SQLAlchemy async session.
+
+    Returns:
+        ApiResponse containing the updated mastery document and
+        just_learned flag.
+    """
+    now = datetime.now(timezone.utc)
+
+    mastery, just_learned = await _apply_attempt(db, body, now)
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Two concurrent first attempts on a new scale_key can both see no
+        # mastery row and both INSERT; the loser violates the UNIQUE
+        # constraint on scale_key.  Roll back, re-read (the row now exists)
+        # and apply this attempt once as an update.
+        await db.rollback()
+        mastery, just_learned = await _apply_attempt(db, body, now)
+        await db.commit()
     await db.refresh(mastery)
 
     attempt_rows = await _fetch_attempts(db, body.scale_key)

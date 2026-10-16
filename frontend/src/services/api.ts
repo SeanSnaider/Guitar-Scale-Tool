@@ -2,7 +2,8 @@
 /**
  * api.ts
  *
- * Typed HTTP client for the Guitar Learning Tool FastAPI backend.
+ * Typed HTTP client for the Scale Teacher FastAPI backend (optional sync;
+ * the app works without it).
  *
  * All requests include an `X-Session-ID` header derived from a UUID
  * stored in localStorage. This identifies the "user" without requiring
@@ -15,23 +16,43 @@
 
 const SESSION_KEY = 'guitar-tool-session-id';
 
-/**
- * Returns the persistent session ID, creating one if it doesn't exist yet.
- */
-function getOrCreateSessionId(): string {
-  let id = localStorage.getItem(SESSION_KEY);
-  if (!id) {
-    id = crypto.randomUUID();
-    localStorage.setItem(SESSION_KEY, id);
+/** Random id without crypto.randomUUID, which only exists in secure contexts (not plain-HTTP LAN URLs). */
+function randomId(): string {
+  if (typeof crypto !== 'undefined') {
+    if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+    if (typeof crypto.getRandomValues === 'function') {
+      const b = crypto.getRandomValues(new Uint8Array(16));
+      return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+    }
   }
-  return id;
+  return `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
 }
 
-const SESSION_ID = getOrCreateSessionId();
+let sessionId: string | null = null;
+
+/**
+ * The persistent session id, created lazily on the first request. Storage
+ * failures (private mode, blocked storage) fall back to an in-memory id, so
+ * importing this module can never take the app down.
+ */
+function getSessionId(): string {
+  if (sessionId) return sessionId;
+  try {
+    sessionId = localStorage.getItem(SESSION_KEY);
+    if (!sessionId) {
+      sessionId = randomId();
+      localStorage.setItem(SESSION_KEY, sessionId);
+    }
+  } catch {
+    sessionId ??= randomId();
+  }
+  return sessionId;
+}
 
 // ─── Base URL ─────────────────────────────────────────────────────────────────
 
-const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:8000';
+/** Trailing slashes stripped so `${BASE_URL}/sessions` never becomes `//sessions`. */
+const BASE_URL = ((import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:8000').replace(/\/+$/, '');
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -112,6 +133,30 @@ export interface BackendUserStats {
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
+/** An HTTP error from the backend, with its status code. */
+export class ApiError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
+/** Turns a FastAPI error body (`error`, or `detail` as a string or a list) into a message. */
+function errorMessage(body: unknown, status: number): string {
+  if (body && typeof body === 'object') {
+    const b = body as { error?: unknown; detail?: unknown };
+    if (typeof b.error === 'string') return b.error;
+    if (typeof b.detail === 'string') return b.detail;
+    if (Array.isArray(b.detail) && b.detail.length) {
+      const first = b.detail[0] as { msg?: string; loc?: unknown[] };
+      return [first.loc?.join('.'), first.msg].filter(Boolean).join(': ') || `API error: ${status}`;
+    }
+  }
+  return `API error: ${status}`;
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -121,19 +166,30 @@ async function request<T>(
     ...options,
     headers: {
       'Content-Type': 'application/json',
-      'X-Session-ID': SESSION_ID,
+      'X-Session-ID': getSessionId(),
       ...options.headers,
     },
   });
 
-  const data = await response.json() as T;
-
-  if (!response.ok) {
-    const errData = data as { error?: string };
-    throw new Error(errData.error ?? `API error: ${response.status}`);
+  // Read as text first: error pages from proxies and plain-text 500s aren't
+  // JSON, and parsing them blindly would hide the status code.
+  const text = await response.text();
+  let body: unknown = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = null;
   }
 
-  return data;
+  if (!response.ok) throw new ApiError(errorMessage(body, response.status), response.status);
+  if (body === null) throw new ApiError('Empty or non-JSON response from the server', response.status);
+  return body as T;
+}
+
+/** Throws when a paginated response reports failure, like the other calls do. */
+function checkPage<T>(res: PaginatedResponse<T>): PaginatedResponse<T> {
+  if (!res.success) throw new Error(res.error ?? 'Request failed');
+  return res;
 }
 
 // ─── Practice Sessions ────────────────────────────────────────────────────────
@@ -189,9 +245,7 @@ export async function listSessions(
   page = 1,
   limit = 20,
 ): Promise<PaginatedResponse<PracticeSession>> {
-  return request<PaginatedResponse<PracticeSession>>(
-    `/sessions?page=${page}&limit=${limit}`,
-  );
+  return checkPage(await request<PaginatedResponse<PracticeSession>>(`/sessions?page=${page}&limit=${limit}`));
 }
 
 // ─── Scale Mastery ────────────────────────────────────────────────────────────
@@ -287,9 +341,7 @@ export async function listChords(
   page = 1,
   limit = 50,
 ): Promise<PaginatedResponse<ChordRecord>> {
-  return request<PaginatedResponse<ChordRecord>>(
-    `/chords?page=${page}&limit=${limit}`,
-  );
+  return checkPage(await request<PaginatedResponse<ChordRecord>>(`/chords?page=${page}&limit=${limit}`));
 }
 
 /**

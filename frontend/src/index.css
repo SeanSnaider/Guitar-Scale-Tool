@@ -1,240 +1,213 @@
 @import "tailwindcss";
 
-/* ========================================
-   STUDIO WALNUT DESIGN SYSTEM
-   Single dark theme — no light mode, no theme switching.
-   All color tokens defined as CSS custom properties
-   on :root so they cascade to all components.
-   ======================================== */
+/* ==========================================================================
+   SCALE TEACHER · MONOCHROME DESIGN SYSTEM
+   One neutral scale plus a single accent. Orange means exactly two things:
+   the root note, and whatever is sounding right now (plus the one primary
+   action on a screen). Everything else is ink on a near-white ground.
 
-:root {
-  color-scheme: dark;
+   Tokens live in @theme so Tailwind generates utilities from them:
+     bg-ground, bg-surface, bg-sunken, border-line, border-control,
+     text-ink, text-muted, bg-accent, text-accent-ink, text-correct, ...
+   Components use those utilities; nothing hard-codes a hex value.
+   ========================================================================== */
 
-  /* ---- Core backgrounds ---- */
-  --bg-primary: #1C1714;
-  --bg-surface: #231E1B;
-  --bg-elevated: #2A2320;
+@theme {
+  /* ---- Neutral scale ---- */
+  --color-ground: #FAFAFA;        /* page */
+  --color-surface: #FFFFFF;       /* panels, cards */
+  --color-sunken: #F2F2F2;        /* segmented-control tracks, wells */
+  --color-board: #F4F4F4;         /* fretboard wood */
+  --color-line: #E6E6E6;          /* panel hairlines (decorative) */
+  --color-line-strong: #D4D4D4;   /* dividers, fret wires */
+  --color-control: #8F8F8F;       /* input/select borders: >=3:1 on white */
+  --color-string: #A8A8A8;        /* guitar strings */
+  --color-muted: #6B6B6B;         /* secondary text: 4.6:1 on sunken */
+  --color-ink: #111111;           /* primary text, scale notes */
 
-  /* ---- Text ---- */
-  --text-body: #E8DFD0;
-  --text-secondary: #A89F90;
-  --text-muted: #888780;
+  /* ---- The accent ---- */
+  --color-accent: #F25C05;        /* fills: root notes, playing ring, Play */
+  --color-on-accent: #111111;     /* text on accent fills (5.7:1) */
+  --color-accent-ink: #C2410C;    /* accent as text (5.2:1 on white) */
+  --color-accent-soft: color-mix(in srgb, #F25C05 10%, transparent);
 
-  /* ---- Accent / amber ---- */
-  --accent-primary: #EF9F27;
-  --accent-hover: #D4891F;
-  --accent-glow: #FAEEDA;
+  /* ---- Semantic states (only where they carry meaning) ---- */
+  --color-correct: #15803D;
+  --color-correct-soft: color-mix(in srgb, #15803D 10%, transparent);
+  --color-incorrect: #B91C1C;
+  --color-incorrect-soft: color-mix(in srgb, #B91C1C 8%, transparent);
 
-  /* ---- Guitar / fretboard ---- */
-  --fretboard-bg: #3D2B1A;
-  --fret-wire: #444441;
-  --nut-color: #5F5E5A;
-  --string-color: #8A8070;
+  /* ---- Type ---- */
+  --font-sans: 'Manrope Variable', 'Manrope', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
-  /* ---- Interactive borders ---- */
-  --border-subtle: rgba(239, 159, 39, 0.15);
-  --border-input: rgba(239, 159, 39, 0.30);
-
-  /* ---- Semantic ---- */
-  --correct: #4CAF50;
-  --incorrect: #EF4444;
-  --info: #60A5FA;
-
-  /* ---- Fonts ---- */
-  --font-display: Georgia, 'Times New Roman', serif;
-  --font-body: 'Inter', 'Segoe UI', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  /* ---- Radii ---- */
+  --radius-control: 7px;
+  --radius-panel: 10px;
 }
 
-/* ========================================
-   BASE LAYER
-   Sets default typography and background on
-   the document root elements.
-   ======================================== */
+/* ---- Layout metrics (not colours, so they stay plain custom properties) ---- */
+:root {
+  color-scheme: light;
+  --rail-w: 208px;
+  --aside-w: 300px;
+  --transport-h: 64px;
+  --tabbar-h: 60px;               /* phone bottom navigation */
+  --gutter: 24px;
+  --gutter-x-left: max(var(--gutter), env(safe-area-inset-left));
+  --gutter-x-right: max(var(--gutter), env(safe-area-inset-right));
+
+  /* Fretboard density (fine pointer); touch overrides below */
+  --fret-row-h: 40px;
+  --fret-cell-min: 30px;
+  --note-hit-pad: 0px;
+}
+
+@media (max-width: 767px) {
+  :root { --gutter: 16px; --transport-h: 56px; }
+}
+
+@media (pointer: coarse) {
+  :root {
+    --fret-row-h: 46px;
+    --fret-cell-min: 42px;
+    --note-hit-pad: 8px;
+  }
+}
+
+/* ==========================================================================
+   BASE
+   ========================================================================== */
 
 @layer base {
   html {
-    font-family: var(--font-body);
+    font-family: var(--font-sans);
     scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
   }
 
   body {
-    background-color: var(--bg-primary);
-    color: var(--text-body);
+    background-color: var(--color-ground);
+    color: var(--color-ink);
+    font-size: 14px;
+    line-height: 1.5;
+    font-weight: 500;
     @apply antialiased;
   }
 
+  ::selection { background: var(--color-accent-soft); color: var(--color-ink); }
+
   :focus-visible {
-    outline: 2px solid var(--accent-primary);
+    outline: 2px solid var(--color-ink);
     outline-offset: 2px;
   }
 
-  :focus:not(:focus-visible) {
-    outline: none;
+  :focus:not(:focus-visible) { outline: none; }
+
+  /* Programmatic focus targets (view mains, dialogs) need no ring */
+  main[tabindex='-1']:focus,
+  [role='dialog'][tabindex='-1']:focus { outline: none; }
+
+  /* Touch: every control is at least a 44px target unless it opts out with
+     data-dense and supplies its own hit area (fretboard and tab notes).
+     :where() keeps specificity at zero so component rules still win. */
+  @media (pointer: coarse) {
+    :where(button, select, [role='tab'], input[type='range']):not([data-dense]) {
+      min-height: 44px;
+    }
+    :where(button):not([data-dense]) { min-width: 44px; }
+
+    /* iOS Safari zooms the page when a text field under 16px gets focus */
+    input:not([type='range']):not([type='checkbox']):not([type='radio']),
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
   }
 }
 
-/* ========================================
-   ANIMATIONS
-   Named keyframes used by the design system.
-   ======================================== */
+/* ==========================================================================
+   UTILITIES
+   ========================================================================== */
 
-/** Pulses a note marker to draw attention when played */
-@keyframes note-pulse {
-  0%   { transform: scale(1); }
-  50%  { transform: scale(1.2); }
-  100% { transform: scale(1); }
+/* Numbers that update in place keep a fixed width so text doesn't jitter */
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* Skip link: hidden until a keyboard user tabs to it */
+.skip-link {
+  position: absolute;
+  left: var(--gutter-x-left);
+  top: 8px;
+  z-index: 200;
+  padding: 10px 14px;
+  border-radius: var(--radius-control);
+  background-color: var(--color-ink);
+  color: var(--color-surface);
+  font-size: 14px;
+  font-weight: 700;
+  transform: translateY(calc(-100% - 16px));
+}
+.skip-link:focus-visible { transform: none; outline-color: var(--color-ink); }
+
+/* Expands a small fretboard note's tap area without changing its drawn size */
+.note-hit { position: relative; }
+.note-hit::before {
+  content: '';
+  position: absolute;
+  inset: calc(-1 * var(--note-hit-pad));
+  border-radius: 50%;
 }
 
-/** Fades an element in from invisible to fully opaque */
+/* Native range inputs pick up the ink colour */
+input[type='range'] { accent-color: var(--color-ink); }
+input[type='checkbox'] { accent-color: var(--color-ink); }
+
+/* ==========================================================================
+   MOTION
+   One authored moment: the playing ring walks the fretboard and the tab in
+   time. Everything else is quick state feedback.
+   ========================================================================== */
+
 @keyframes fade-in {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
 
-/** Slides an element up from 8 px below its resting position while fading in */
-@keyframes slide-up {
-  from {
-    transform: translateY(8px);
-    opacity: 0;
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* The playing ring lands on each note with a short decelerating pulse */
+@keyframes ring-land {
+  from { transform: scale(1.35); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
+}
+
+@keyframes beat-tick {
+  from { transform: scale(1.5); }
+  to   { transform: scale(1); }
+}
+
+@keyframes wave-bar {
+  0%, 100% { transform: scaleY(0.4); }
+  50%      { transform: scaleY(1); }
+}
+
+/* Reduced motion: spatial movement goes; fades and colour changes that
+   confirm an action stay. Inline animation styles need !important. */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .motion-slide { animation-name: fade-in !important; }
+  .motion-loop { animation: none !important; }
+  .motion-spin { animation-duration: 2s !important; }
+  .motion-scale,
+  .note-hit,
+  .ring-land,
+  .beat-tick {
+    transform: none !important;
+    animation: none !important;
   }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-
-/** Flashes the background green to signal a correct answer, then reverts */
-@keyframes answer-correct {
-  0%   { background-color: transparent; }
-  40%  { background-color: #4CAF50; }
-  100% { background-color: transparent; }
-}
-
-/** Flashes the background red to signal an incorrect answer, then reverts */
-@keyframes answer-incorrect {
-  0%   { background-color: transparent; }
-  40%  { background-color: #EF4444; }
-  100% { background-color: transparent; }
-}
-
-/** Slides the audio shelf panel up from below the viewport */
-@keyframes shelf-slide-up {
-  from { transform: translateY(100%); }
-  to   { transform: translateY(0); }
-}
-
-/* ========================================
-   UTILITY CLASSES
-   Reusable single-purpose classes that
-   layer on top of Tailwind utilities.
-   ======================================== */
-
-/**
- * Applies the serif display typeface (Georgia) to headings
- * and decorative text that should feel warm and editorial.
- */
-.font-display {
-  font-family: var(--font-display);
-}
-
-/**
- * Active tab indicator: amber bottom border + amber text.
- * Applied to the currently selected navigation tab button.
- */
-.tab-active {
-  color: var(--accent-primary);
-  border-bottom: 2px solid var(--accent-primary);
-  font-weight: 500;
-}
-
-/**
- * Inactive tab: muted text, no border.
- * Transitions to amber text on hover.
- */
-.tab-inactive {
-  color: var(--text-secondary);
-  border-bottom: 2px solid transparent;
-}
-
-.tab-inactive:hover {
-  color: var(--accent-primary);
-}
-
-/**
- * Root note circle: 24 px amber circle with dark text.
- * Used on the fretboard to mark the root note of a scale.
- */
-.note-circle-root {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background-color: #EF9F27;
-  color: #1C1714;
-  font-weight: bold;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  line-height: 1;
-}
-
-/**
- * Scale note circle: 22 px dark-amber circle with warm text.
- * Used for non-root scale tones on the fretboard.
- */
-.note-circle-scale {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background-color: #854F0B;
-  color: #FAEEDA;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  line-height: 1;
-}
-
-/**
- * Muted note circle: 22 px dark circle with a subtle fret-wire border.
- * Used for chromatic tones that fall outside the current scale.
- */
-.note-circle-muted {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background-color: #2A2320;
-  color: #888780;
-  border: 1px solid #444441;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  line-height: 1;
-}
-
-/**
- * Primary amber action button.
- * Use for the main call-to-action in any panel (e.g., "Play Scale").
- */
-.btn-amber {
-  background-color: var(--accent-primary);
-  color: #1C1714;
-  border-radius: 6px;
-  padding: 6px 12px;
-  font-weight: 500;
-  font-size: 13px;
-  border: none;
-  cursor: pointer;
-  transition: background-color 150ms ease;
-}
-
-.btn-amber:hover {
-  background-color: var(--accent-hover);
-}
-
-.btn-amber:focus-visible {
-  outline: 2px solid var(--accent-primary);
-  outline-offset: 2px;
 }

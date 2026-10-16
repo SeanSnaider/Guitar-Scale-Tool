@@ -4,6 +4,10 @@ Reads from the ``practice_sessions`` and ``scale_mastery`` tables to
 produce a single summary of the user's progress.  All computation is
 done in Python after fetching minimal data sets; for the expected scale
 of a single-user guitar tool this is acceptable and avoids complex SQL.
+
+Stats are global, not per-client: ``scale_mastery`` has no owner column and
+adding one would be a schema change, so all clients share these numbers.
+All day bucketing is done in UTC.
 """
 from datetime import datetime, timezone
 from typing import Any
@@ -59,8 +63,10 @@ def _compute_streaks(dates: list[str]) -> tuple[int, int]:
 
     # current_streak: is the last run still active (last date == today or
     # yesterday)?  We report the length of the final consecutive run so
-    # that unit tests (which run "today") see a non-zero value.
-    today = date.today()
+    # that unit tests (which run "today") see a non-zero value.  ``today``
+    # must be the UTC date because session dates are bucketed in UTC;
+    # date.today() is server-local and disagrees near midnight.
+    today = datetime.now(timezone.utc).date()
     last = parsed[-1]
     if last >= today - timedelta(days=1):
         current_streak = current_run

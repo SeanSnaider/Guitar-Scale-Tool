@@ -12,6 +12,8 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { learnedScaleKey, localDayKey, localDayKeyOffset, parseLearnedScaleKey } from './progress';
+import { TUNINGS } from '../data/musicTheory';
 
 /** Fretboard display modes — how notes are labelled on the fretboard. */
 export type DisplayMode = 'dots' | 'notes' | 'intervals' | 'patterns';
@@ -154,6 +156,12 @@ export interface GuitarState {
   // ---- Gamification ----
   userStats: UserStats;
   addXP: (amount: number) => void;
+  /**
+   * Records practice today (local calendar): continues the streak if the last
+   * practice was yesterday, starts a new one otherwise. Idempotent per day.
+   */
+  recordPracticeDay: () => void;
+  /** @deprecated Alias of recordPracticeDay. */
   incrementStreak: () => void;
   resetStreak: () => void;
   unlockAchievement: (achievementId: string) => void;
@@ -161,10 +169,21 @@ export interface GuitarState {
   incrementScalesLearned: () => void;
 
   // ---- Progress ----
-  /** Keys formatted as "root-scale-position". */
+  /** Keys from learnedScaleKey(root, scaleKey) ("C-major"); see store/progress.ts. */
   learnedScales: Set<string>;
+  /** Adds a learned scale. Idempotent: XP and the counter only move the first time. */
+  markScaleLearned: (key: string) => void;
+  /** Removes a learned scale (no XP change). */
+  unmarkScaleLearned: (key: string) => void;
+  /** @deprecated Prefer markScaleLearned / unmarkScaleLearned. */
   toggleLearnedScale: (key: string) => void;
   isScaleLearned: (key: string) => boolean;
+  /**
+   * Sequence-mode mastery: consecutive correct full runs at >= 120 BPM per
+   * learned-scale key. Tracked locally so mastery works without the server.
+   */
+  sequenceMastery: Record<string, number>;
+  setSequenceMastery: (key: string, consecutiveCorrect: number) => void;
 
   // ---- Practice Mode ----
   practiceMode: 'none' | 'speed_trainer' | 'quiz';
@@ -199,14 +218,42 @@ export interface GuitarState {
   setEarTrainingAnswers: (answers: Array<'correct' | 'incorrect' | 'pending'>) => void;
 
   // ---- Navigation ----
-  activeTab: 'fretboard' | 'scales' | 'chords' | 'ear-training' | 'reference' | 'progress' | 'chordai';
-  setActiveTab: (tab: 'fretboard' | 'scales' | 'chords' | 'ear-training' | 'reference' | 'progress' | 'chordai') => void;
+  /**
+   * Current view. The app shows five destinations: 'fretboard' (Practice),
+   * 'ear-training', 'chordai', 'library' and 'progress'. 'scales' and
+   * 'chords' open the Library on that section, and 'reference' opens
+   * Practice (its content lives in the Practice side column). The legacy
+   * ids stay valid so persisted state from older versions still loads.
+   */
+  activeTab: TabId;
+  setActiveTab: (tab: TabId) => void;
 
-  // ---- Audio Shelf ----
-  /** Whether the slide-up audio controls shelf is visible. */
+  // ---- Sound settings popover ----
+  /** Whether the transport bar's sound settings panel is open. */
   isAudioShelfOpen: boolean;
   setIsAudioShelfOpen: (open: boolean) => void;
+
+  // ---- Playback position (transient) ----
+  /**
+   * The fretboard position sounding right now during scale playback, so the
+   * fretboard can draw the playing ring in step with the tablature. Uses the
+   * store's string order (0 = lowest string). Null when nothing is playing.
+   */
+  playingPosition: { string: number; fret: number } | null;
+  /** Index into the current tab pattern of the sounding note; -1 when idle. */
+  playingIndex: number;
+  setPlaying: (index: number, pos: { string: number; fret: number } | null) => void;
 }
+
+export type TabId =
+  | 'fretboard'
+  | 'library'
+  | 'scales'
+  | 'chords'
+  | 'ear-training'
+  | 'reference'
+  | 'progress'
+  | 'chordai';
 
 // ---- Default values ----
 
@@ -266,7 +313,8 @@ export const useGuitarStore = create<GuitarState>()(
       // ---- Display Options ----
       displayMode: 'notes',
       setDisplayMode: (mode) => set({ displayMode: mode }),
-      showNonScaleNotes: true,
+      // Off by default: the first screen shows the scale, not a chromatic chart
+      showNonScaleNotes: false,
       setShowNonScaleNotes: (show) => set({ showNonScaleNotes: show }),
 
       // ---- Position System ----
@@ -345,26 +393,12 @@ export const useGuitarStore = create<GuitarState>()(
           const newLevel = Math.floor(newXP / XP_PER_LEVEL) + 1;
           return { userStats: { ...state.userStats, xp: newXP, level: newLevel } };
         }),
-      incrementStreak: () =>
+      recordPracticeDay: () =>
         set((state) => {
-          const today = new Date().toISOString().split('T')[0];
-          const lastDate = state.userStats.lastPracticeDate;
-
-          let newStreak = state.userStats.currentStreak;
-          if (lastDate) {
-            const yesterday = new Date();
-            yesterday.setDate(yesterday.getDate() - 1);
-            const yesterdayStr = yesterday.toISOString().split('T')[0];
-
-            if (lastDate === yesterdayStr) {
-              newStreak += 1;
-            } else if (lastDate !== today) {
-              newStreak = 1;
-            }
-          } else {
-            newStreak = 1;
-          }
-
+          const today = localDayKey();
+          const last = state.userStats.lastPracticeDate;
+          if (last === today) return state;
+          const newStreak = last === localDayKeyOffset(1) ? state.userStats.currentStreak + 1 : 1;
           return {
             userStats: {
               ...state.userStats,
@@ -374,6 +408,7 @@ export const useGuitarStore = create<GuitarState>()(
             },
           };
         }),
+      incrementStreak: () => get().recordPracticeDay(),
       resetStreak: () =>
         set((state) => ({
           userStats: { ...state.userStats, currentStreak: 0 },
@@ -405,20 +440,34 @@ export const useGuitarStore = create<GuitarState>()(
 
       // ---- Progress ----
       learnedScales: new Set<string>(),
-      toggleLearnedScale: (key) =>
+      markScaleLearned: (key) => {
+        if (get().learnedScales.has(key)) return;
         set((state) => {
-          const newSet = new Set(state.learnedScales);
-          if (newSet.has(key)) {
-            newSet.delete(key);
-          } else {
-            newSet.add(key);
-            // Award XP for learning a new scale position
-            get().addXP(10);
-            get().incrementScalesLearned();
-          }
-          return { learnedScales: newSet };
+          const learned = new Set(state.learnedScales);
+          learned.add(key);
+          return {
+            learnedScales: learned,
+            userStats: { ...state.userStats, totalScalesLearned: learned.size },
+          };
+        });
+        get().addXP(10);
+      },
+      unmarkScaleLearned: (key) =>
+        set((state) => {
+          if (!state.learnedScales.has(key)) return state;
+          const learned = new Set(state.learnedScales);
+          learned.delete(key);
+          return {
+            learnedScales: learned,
+            userStats: { ...state.userStats, totalScalesLearned: learned.size },
+          };
         }),
+      toggleLearnedScale: (key) =>
+        get().learnedScales.has(key) ? get().unmarkScaleLearned(key) : get().markScaleLearned(key),
       isScaleLearned: (key) => get().learnedScales.has(key),
+      sequenceMastery: {},
+      setSequenceMastery: (key, consecutiveCorrect) =>
+        set((state) => ({ sequenceMastery: { ...state.sequenceMastery, [key]: consecutiveCorrect } })),
 
       // ---- Practice Mode ----
       practiceMode: 'none',
@@ -456,9 +505,14 @@ export const useGuitarStore = create<GuitarState>()(
       activeTab: 'fretboard',
       setActiveTab: (tab) => set({ activeTab: tab }),
 
-      // ---- Audio Shelf ----
+      // ---- Sound settings popover ----
       isAudioShelfOpen: false,
       setIsAudioShelfOpen: (open) => set({ isAudioShelfOpen: open }),
+
+      // ---- Playback position ----
+      playingPosition: null,
+      playingIndex: -1,
+      setPlaying: (index, pos) => set({ playingIndex: index, playingPosition: pos }),
     }),
     {
       name: 'guitar-scale-tool-storage',
@@ -487,47 +541,62 @@ export const useGuitarStore = create<GuitarState>()(
         speedTrainerIncrement: state.speedTrainerIncrement,
         activeTab: state.activeTab,
         earTrainingMode: state.earTrainingMode,
+        sequenceMastery: state.sequenceMastery,
       }),
-      onRehydrateStorage: () => (state) => {
-        // Rehydrate learnedScales back to a Set after JSON deserialisation
-        if (state && Array.isArray(state.learnedScales)) {
-          state.learnedScales = new Set(state.learnedScales as unknown as string[]);
-        }
-      },
+      version: 1,
+      // v0 (no version) -> v1: nothing to transform; mergePersisted() below
+      // validates and normalises every field on every load.
+      migrate: (persisted) => persisted as GuitarState,
+      merge: (persisted, current) => mergePersisted(persisted, current),
     }
   )
 );
 
 // ========================================
-// Selector hooks
-// Fine-grained selectors prevent unnecessary re-renders by only
-// subscribing to the slice of state that each hook cares about.
+// Persistence merge
 // ========================================
 
 /**
- * Returns the currently selected root note and scale name.
+ * Merges persisted state over the defaults safely:
+ * - nested settings objects are deep-merged, so fields added in later
+ *   versions get their defaults instead of becoming undefined (NaN gains);
+ * - learnedScales always becomes a Set (JSON gives an array, or {} for an
+ *   old serialised Set), and legacy "root-scale-position" keys are folded
+ *   to "root-scale";
+ * - numFrets is clamped to the slider range and the tuning is checked
+ *   against the known tunings (notes length must match the string count).
  */
-export const useSelectedScale = () =>
-  useGuitarStore((state) => ({
-    root: state.selectedRoot,
-    scale: state.selectedScale,
-  }));
+function mergePersisted(persisted: unknown, current: GuitarState): GuitarState {
+  if (!persisted || typeof persisted !== 'object') return current;
+  const p = persisted as Partial<GuitarState> & { learnedScales?: unknown };
 
-/**
- * Returns display mode settings (how notes are labelled on the fretboard).
- */
-export const useDisplayOptions = () =>
-  useGuitarStore((state) => ({
-    displayMode: state.displayMode,
-    showNonScaleNotes: state.showNonScaleNotes,
-  }));
+  const learnedRaw = Array.isArray(p.learnedScales) ? (p.learnedScales as unknown[]) : [];
+  const learned = new Set<string>();
+  for (const k of learnedRaw) {
+    if (typeof k !== 'string') continue;
+    const parsed = parseLearnedScaleKey(k);
+    if (parsed) learned.add(learnedScaleKey(parsed.root, parsed.scaleKey));
+  }
 
-/**
- * Returns the current metronome settings.
- */
-export const useMetronome = () => useGuitarStore((state) => state.metronome);
+  const tuning = p.currentTuning;
+  const validTuning =
+    tuning &&
+    Array.isArray(tuning.notes) &&
+    tuning.notes.length === tuning.strings &&
+    Object.values(TUNINGS).some((t) => t.notes.join(',') === tuning.notes.join(','));
 
-/**
- * Returns the player's gamification statistics.
- */
-export const useUserStats = () => useGuitarStore((state) => state.userStats);
+  const numFrets = typeof p.numFrets === 'number' ? Math.min(24, Math.max(12, Math.round(p.numFrets))) : current.numFrets;
+  const userStats = { ...current.userStats, ...(p.userStats ?? {}) };
+
+  return {
+    ...current,
+    ...p,
+    audioSettings: { ...current.audioSettings, ...(p.audioSettings ?? {}) },
+    metronome: { ...current.metronome, ...(p.metronome ?? {}), isPlaying: false },
+    userStats: { ...userStats, totalScalesLearned: learned.size },
+    learnedScales: learned,
+    sequenceMastery: { ...(p.sequenceMastery ?? {}) },
+    currentTuning: validTuning ? (tuning as GuitarState['currentTuning']) : current.currentTuning,
+    numFrets,
+  };
+}

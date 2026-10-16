@@ -3,16 +3,29 @@
 Provides routes to start a session, end it (computing duration), list
 all sessions for the current user (paginated, newest first), and fetch
 a single session by its integer primary key.
+
+Sessions are scoped to the caller's ``X-Session-ID`` header: a client only
+sees and can end its own sessions; anyone else's id returns 404.  This is
+minimal client scoping, not authentication (the header is unauthenticated).
+Scale mastery, chord history, and stats are still shared across all
+clients because their tables have no owner column.
 """
 import json
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import PracticeSession, get_database
-from ..models.common import ApiResponse, PaginatedResponse, PaginationMeta
+from ..dependencies import get_session_id
+from ..models.common import (
+    MAX_LIMIT,
+    MAX_PAGE,
+    ApiResponse,
+    PaginatedResponse,
+    PaginationMeta,
+)
 from ..models.session import (
     PracticeSessionCreate,
     PracticeSessionEnd,
@@ -20,6 +33,10 @@ from ..models.session import (
 )
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
+
+# Largest value SQLite's signed 64-bit INTEGER can hold.  Larger ids would
+# make the driver raise OverflowError (a 500), so they are treated as 404.
+_MAX_DB_INT = 2**63 - 1
 
 
 def _serialize(row: PracticeSession) -> PracticeSessionResponse:
@@ -53,18 +70,46 @@ def _parse_session_id(raw_id: str) -> int:
         The parsed integer ID.
 
     Raises:
-        HTTPException: 404 if the string cannot be parsed as an integer.
+        HTTPException: 404 if the string cannot be parsed as an integer or
+            is outside the range of a positive SQLite INTEGER.
     """
     try:
-        return int(raw_id)
+        pk = int(raw_id)
     except (ValueError, TypeError):
         raise HTTPException(status_code=404, detail="Session not found")
+    if pk < 1 or pk > _MAX_DB_INT:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return pk
+
+
+async def _get_owned_session(
+    db: AsyncSession, raw_id: str, x_session_id: str
+) -> PracticeSession:
+    """Load a session by PK, returning 404 unless it belongs to the caller.
+
+    Args:
+        db: Active async session.
+        raw_id: String representation of the integer primary key.
+        x_session_id: The caller's ``X-Session-ID`` header value.
+
+    Returns:
+        The matching PracticeSession row.
+
+    Raises:
+        HTTPException: 404 if the id is malformed, missing, or owned by a
+            different client (deliberately indistinguishable).
+    """
+    pk = _parse_session_id(raw_id)
+    row: PracticeSession | None = await db.get(PracticeSession, pk)
+    if row is None or row.session_id != x_session_id:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return row
 
 
 @router.post("/start", response_model=ApiResponse[PracticeSessionResponse])
 async def start_session(
     body: PracticeSessionCreate,
-    x_session_id: str = Header(...),
+    x_session_id: str = Depends(get_session_id),
     db: AsyncSession = Depends(get_database),
 ) -> ApiResponse[PracticeSessionResponse]:
     """Start a new practice session.
@@ -100,27 +145,32 @@ async def start_session(
 async def end_session(
     practice_session_id: str,
     body: PracticeSessionEnd,
+    x_session_id: str = Depends(get_session_id),
     db: AsyncSession = Depends(get_database),
 ) -> ApiResponse[PracticeSessionResponse]:
     """End an existing practice session and compute its duration.
 
+    Ending is idempotent: if the session has already ended, the stored row
+    is returned unchanged (``ended_at``, ``duration_seconds`` and
+    ``accuracy`` are not overwritten).
+
     Args:
         practice_session_id: String representation of the integer session PK.
         body: Optional accuracy score.
+        x_session_id: The caller's ``X-Session-ID`` header value.
         db: Injected SQLAlchemy async session.
 
     Returns:
-        ApiResponse wrapping the updated session.
+        ApiResponse wrapping the updated (or already-ended) session.
 
     Raises:
-        HTTPException: 404 if no session with that ID exists.
+        HTTPException: 404 if no session with that ID exists for the caller.
     """
-    pk = _parse_session_id(practice_session_id)
-    now = datetime.now(timezone.utc)
+    row = await _get_owned_session(db, practice_session_id, x_session_id)
+    if row.ended_at is not None:
+        return ApiResponse(success=True, data=_serialize(row))
 
-    row: PracticeSession | None = await db.get(PracticeSession, pk)
-    if row is None:
-        raise HTTPException(status_code=404, detail="Session not found")
+    now = datetime.now(timezone.utc)
 
     started_at = row.started_at
     if started_at.tzinfo is None:
@@ -139,27 +189,34 @@ async def end_session(
 
 @router.get("", response_model=PaginatedResponse[PracticeSessionResponse])
 async def list_sessions(
-    page: int = 1,
-    limit: int = 20,
+    page: int = Query(1, ge=1, le=MAX_PAGE),
+    limit: int = Query(20, ge=1, le=MAX_LIMIT),
+    x_session_id: str = Depends(get_session_id),
     db: AsyncSession = Depends(get_database),
 ) -> PaginatedResponse[PracticeSessionResponse]:
-    """List practice sessions, most recent first.
+    """List the caller's practice sessions, most recent first.
+
+    Only sessions whose ``session_id`` matches the caller's
+    ``X-Session-ID`` header are counted and returned.
 
     Args:
         page: 1-based page number (default 1).
-        limit: Maximum items per page (default 20).
+        limit: Maximum items per page (default 20, max 100).
+        x_session_id: The caller's ``X-Session-ID`` header value.
         db: Injected SQLAlchemy async session.
 
     Returns:
         PaginatedResponse with session list and pagination metadata.
     """
+    owned = PracticeSession.session_id == x_session_id
     total: int = await db.scalar(
-        select(func.count()).select_from(PracticeSession)
+        select(func.count()).select_from(PracticeSession).where(owned)
     )
     skip = (page - 1) * limit
     rows = (
         await db.scalars(
             select(PracticeSession)
+            .where(owned)
             .order_by(PracticeSession.started_at.desc())
             .offset(skip)
             .limit(limit)
@@ -178,22 +235,21 @@ async def list_sessions(
 )
 async def get_session(
     practice_session_id: str,
+    x_session_id: str = Depends(get_session_id),
     db: AsyncSession = Depends(get_database),
 ) -> ApiResponse[PracticeSessionResponse]:
-    """Get a single practice session by its integer primary key.
+    """Get one of the caller's practice sessions by its integer primary key.
 
     Args:
         practice_session_id: String representation of the integer PK.
+        x_session_id: The caller's ``X-Session-ID`` header value.
         db: Injected SQLAlchemy async session.
 
     Returns:
         ApiResponse wrapping the session document.
 
     Raises:
-        HTTPException: 404 if not found or ID is malformed.
+        HTTPException: 404 if not found, malformed, or owned by another client.
     """
-    pk = _parse_session_id(practice_session_id)
-    row: PracticeSession | None = await db.get(PracticeSession, pk)
-    if row is None:
-        raise HTTPException(status_code=404, detail="Session not found")
+    row = await _get_owned_session(db, practice_session_id, x_session_id)
     return ApiResponse(success=True, data=_serialize(row))

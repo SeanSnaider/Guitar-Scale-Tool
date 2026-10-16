@@ -1,0 +1,549 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-15T13:51:19+00:00",
+  "title": "Design System: Scale Teacher",
+  "extensions": {
+    "colorMeta": {
+      "ground": {
+        "role": "neutral",
+        "displayName": "Ground",
+        "canonical": "#FAFAFA",
+        "tonalRamp": [
+          "#262626",
+          "#424242",
+          "#5E5E5E",
+          "#7A7A7A",
+          "#969696",
+          "#B2B2B2",
+          "#D1D1D1",
+          "#F2F2F2"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Surface",
+        "canonical": "#FFFFFF",
+        "tonalRamp": [
+          "#262626",
+          "#424242",
+          "#5E5E5E",
+          "#7A7A7A",
+          "#969696",
+          "#B2B2B2",
+          "#D1D1D1",
+          "#F2F2F2"
+        ]
+      },
+      "sunken": {
+        "role": "neutral",
+        "displayName": "Sunken",
+        "canonical": "#F2F2F2",
+        "tonalRamp": [
+          "#262626",
+          "#424242",
+          "#5E5E5E",
+          "#7A7A7A",
+          "#969696",
+          "#B2B2B2",
+          "#D1D1D1",
+          "#F2F2F2"
+        ]
+      },
+      "board": {
+        "role": "neutral",
+        "displayName": "Board",
+        "canonical": "#F4F4F4",
+        "tonalRamp": [
+          "#262626",
+          "#424242",
+          "#5E5E5E",
+          "#7A7A7A",
+          "#969696",
+          "#B2B2B2",
+          "#D1D1D1",
+          "#F2F2F2"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#E6E6E6",
+        "tonalRamp": [
+          "#262626",
+          "#424242",
+          "#5E5E5E",
+          "#7A7A7A",
+          "#969696",
+          "#B2B2B2",
+          "#D1D1D1",
+          "#F2F2F2"
+        ]
+      },
+      "line-strong": {
+        "role": "neutral",
+        "displayName": "Strong Line",
+        "canonical": "#D4D4D4",
+        "tonalRamp": [
+          "#262626",
+          "#424242",
+          "#5E5E5E",
+          "#7A7A7A",
+          "#969696",
+          "#B2B2B2",
+          "#D1D1D1",
+          "#F2F2F2"
+        ]
+      },
+      "control": {
+        "role": "neutral",
+        "displayName": "Control Grey",
+        "canonical": "#8F8F8F",
+        "tonalRamp": [
+          "#262626",
+          "#424242",
+          "#5E5E5E",
+          "#7A7A7A",
+          "#969696",
+          "#B2B2B2",
+          "#D1D1D1",
+          "#F2F2F2"
+        ]
+      },
+      "string": {
+        "role": "neutral",
+        "displayName": "String Grey",
+        "canonical": "#A8A8A8",
+        "tonalRamp": [
+          "#262626",
+          "#424242",
+          "#5E5E5E",
+          "#7A7A7A",
+          "#969696",
+          "#B2B2B2",
+          "#D1D1D1",
+          "#F2F2F2"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Muted",
+        "canonical": "#6B6B6B",
+        "tonalRamp": [
+          "#262626",
+          "#424242",
+          "#5E5E5E",
+          "#7A7A7A",
+          "#969696",
+          "#B2B2B2",
+          "#D1D1D1",
+          "#F2F2F2"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#111111",
+        "tonalRamp": [
+          "#262626",
+          "#424242",
+          "#5E5E5E",
+          "#7A7A7A",
+          "#969696",
+          "#B2B2B2",
+          "#D1D1D1",
+          "#F2F2F2"
+        ]
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Signal Orange",
+        "canonical": "#F25C05",
+        "tonalRamp": [
+          "#4B1C02",
+          "#823103",
+          "#B94604",
+          "#F05B05",
+          "#FB7C32",
+          "#FC9F69",
+          "#FDC5A5",
+          "#FEEFE6"
+        ]
+      },
+      "on-accent": {
+        "role": "primary",
+        "displayName": "On-Accent Ink",
+        "canonical": "#111111",
+        "tonalRamp": [
+          "#262626",
+          "#424242",
+          "#5E5E5E",
+          "#7A7A7A",
+          "#969696",
+          "#B2B2B2",
+          "#D1D1D1",
+          "#F2F2F2"
+        ]
+      },
+      "accent-ink": {
+        "role": "primary",
+        "displayName": "Burnt Orange Text",
+        "canonical": "#C2410C",
+        "tonalRamp": [
+          "#481804",
+          "#7D2A08",
+          "#B23C0B",
+          "#E74D0E",
+          "#F3703A",
+          "#F6966F",
+          "#FAC0A9",
+          "#FEEEE7"
+        ]
+      },
+      "accent-soft": {
+        "role": "primary",
+        "displayName": "Orange Wash",
+        "canonical": "color-mix(in srgb, #F25C05 10%, transparent)",
+        "tonalRamp": [
+          "#4B1C02",
+          "#823103",
+          "#B94604",
+          "#F05B05",
+          "#FB7C32",
+          "#FC9F69",
+          "#FDC5A5",
+          "#FEEFE6"
+        ]
+      },
+      "correct": {
+        "role": "semantic",
+        "displayName": "Correct",
+        "canonical": "#15803D",
+        "tonalRamp": [
+          "#0B421F",
+          "#137236",
+          "#1BA24D",
+          "#23D264",
+          "#4BE284",
+          "#7CE9A5",
+          "#B0F2C9",
+          "#E9FBF0"
+        ]
+      },
+      "correct-soft": {
+        "role": "semantic",
+        "displayName": "Correct Wash",
+        "canonical": "color-mix(in srgb, #15803D 10%, transparent)",
+        "tonalRamp": [
+          "#0B421F",
+          "#137236",
+          "#1BA24D",
+          "#23D264",
+          "#4BE284",
+          "#7CE9A5",
+          "#B0F2C9",
+          "#E9FBF0"
+        ]
+      },
+      "incorrect": {
+        "role": "semantic",
+        "displayName": "Incorrect",
+        "canonical": "#B91C1C",
+        "tonalRamp": [
+          "#420A0A",
+          "#731111",
+          "#A41919",
+          "#D52020",
+          "#E44949",
+          "#EB7A7A",
+          "#F3AFAF",
+          "#FCE9E9"
+        ]
+      },
+      "incorrect-soft": {
+        "role": "semantic",
+        "displayName": "Incorrect Wash",
+        "canonical": "color-mix(in srgb, #B91C1C 8%, transparent)",
+        "tonalRamp": [
+          "#420A0A",
+          "#731111",
+          "#A41919",
+          "#D52020",
+          "#E44949",
+          "#EB7A7A",
+          "#F3AFAF",
+          "#FCE9E9"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "View headings via PageTitle only; 32px phone, 40px from 768px."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Current scale name in the Practice side column; ChordAI detect heading."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Panel headings, wordmark, popover heading."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Default text."
+      },
+      "body-sm": {
+        "displayName": "Body small",
+        "purpose": "Chips, segments, notices, descriptions."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Muted sentence-case labels above fields and sliders."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Tab frets, BPM, time signatures, step patterns, counts; tabular figures."
+      }
+    },
+    "shadows": [
+      {
+        "name": "segment-ring",
+        "value": "0 0 0 1px var(--color-line)",
+        "purpose": "Edge of the selected segment in a segmented control."
+      },
+      {
+        "name": "highlight-ring",
+        "value": "0 0 0 2px var(--color-board), 0 0 0 3.5px var(--color-ink)",
+        "purpose": "Highlighted-interval ring on a fretboard note; a ring so it never collides with focus."
+      },
+      {
+        "name": "focus",
+        "value": "outline: 2px solid var(--color-ink); outline-offset: 2px",
+        "purpose": "Global :focus-visible treatment."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state",
+        "value": "100-150ms",
+        "purpose": "Colour, background and border state changes."
+      },
+      {
+        "name": "ease-out-expo",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Entrances and the playing ring landing."
+      },
+      {
+        "name": "ring-land",
+        "value": "220ms scale 1.35 to 1 with fade",
+        "purpose": "The playing ring landing on each note; the one authored motion moment."
+      },
+      {
+        "name": "rise-in",
+        "value": "160ms translateY(6px) to 0 with fade",
+        "purpose": "Sound popover entrance."
+      },
+      {
+        "name": "beat-tick",
+        "value": "180ms ease-out scale 1.5 to 1",
+        "purpose": "Sounding beat dot in the transport."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "slides become fades; loops, scale pulses and ring-land stop",
+        "purpose": "prefers-reduced-motion: reduce."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "min",
+        "value": "320px"
+      },
+      {
+        "name": "compact-play",
+        "value": "360px"
+      },
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      },
+      {
+        "name": "xl",
+        "value": "1280px"
+      },
+      {
+        "name": "coarse-pointer",
+        "value": "(pointer: coarse): 44px targets, 46px fret rows, 42px fret cells, 8px note hit pad"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Play Scale Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single orange button in the app: the transport's Play scale.",
+      "html": "<button class=\"ds-btn-primary\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><polygon points=\"6 3 20 12 6 21 6 3\"/></svg>Play scale</button>",
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;gap:8px;height:44px;padding:0 16px;border:none;border-radius:7px;background:var(--color-accent, #F25C05);color:var(--color-on-accent, #111111);font-family:'Manrope Variable',Manrope,ui-sans-serif,system-ui,sans-serif;font-size:15px;font-weight:700;cursor:pointer;transition:filter 150ms}.ds-btn-primary:hover{filter:brightness(.95)}.ds-btn-primary:active{filter:brightness(.9)}.ds-btn-primary:focus-visible{outline:2px solid var(--color-ink, #111111);outline-offset:2px}"
+    },
+    {
+      "name": "Ink Button",
+      "kind": "button",
+      "refersTo": "button-ink",
+      "description": "A view's main action (Start session, Listen).",
+      "html": "<button class=\"ds-btn-ink\">Start session</button>",
+      "css": ".ds-btn-ink{display:inline-flex;align-items:center;height:36px;padding:0 14px;border:none;border-radius:7px;background:var(--color-ink, #111111);color:var(--color-surface, #FFFFFF);font-family:'Manrope Variable',Manrope,ui-sans-serif,sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:background-color 150ms}.ds-btn-ink:hover{background:color-mix(in srgb,var(--color-ink, #111111) 85%,transparent)}.ds-btn-ink:focus-visible{outline:2px solid var(--color-ink, #111111);outline-offset:2px}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Default button: white with a Control Grey border.",
+      "html": "<button class=\"ds-btn-secondary\">Reset</button>",
+      "css": ".ds-btn-secondary{display:inline-flex;align-items:center;height:36px;padding:0 14px;border:1px solid var(--color-control, #8F8F8F);border-radius:7px;background:var(--color-surface, #FFFFFF);color:var(--color-ink, #111111);font-family:'Manrope Variable',Manrope,sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:background-color 150ms}.ds-btn-secondary:hover{background:var(--color-sunken, #F2F2F2)}.ds-btn-secondary:focus-visible{outline:2px solid var(--color-ink, #111111);outline-offset:2px}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Tertiary and icon-only actions.",
+      "html": "<button class=\"ds-btn-ghost\">Dismiss</button>",
+      "css": ".ds-btn-ghost{display:inline-flex;align-items:center;height:36px;padding:0 14px;border:none;border-radius:7px;background:transparent;color:var(--color-muted, #6B6B6B);font-family:'Manrope Variable',Manrope,sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:background-color 150ms,color 150ms}.ds-btn-ghost:hover{background:var(--color-sunken, #F2F2F2);color:var(--color-ink, #111111)}.ds-btn-ghost:focus-visible{outline:2px solid var(--color-ink, #111111);outline-offset:2px}"
+    },
+    {
+      "name": "Segmented Control",
+      "kind": "custom",
+      "refersTo": "segmented-track",
+      "description": "Mutually exclusive options on a sunken track; selected segment is a white tile.",
+      "html": "<div class=\"ds-seg\" role=\"group\" aria-label=\"Display mode\"><button aria-pressed=\"false\">Dots</button><button aria-pressed=\"true\">Notes</button><button aria-pressed=\"false\">Intervals</button></div>",
+      "css": ".ds-seg{display:inline-flex;gap:2px;height:36px;padding:2px;border:1px solid var(--color-line, #E6E6E6);border-radius:7px;background:var(--color-sunken, #F2F2F2)}.ds-seg button{border:none;background:transparent;padding:0 10px;border-radius:5px;font-family:'Manrope Variable',Manrope,sans-serif;font-size:13px;font-weight:500;color:var(--color-muted, #6B6B6B);cursor:pointer;transition:background-color 150ms,color 150ms,box-shadow 150ms}.ds-seg button:hover{color:var(--color-ink, #111111)}.ds-seg button[aria-pressed=true]{background:var(--color-surface, #FFFFFF);color:var(--color-ink, #111111);font-weight:700;box-shadow:0 0 0 1px var(--color-line, #E6E6E6)}.ds-seg button:focus-visible{outline:2px solid var(--color-ink, #111111);outline-offset:2px}"
+    },
+    {
+      "name": "Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Toggle pill for wrapping filter sets; pressed goes solid ink.",
+      "html": "<div class=\"ds-chips\"><button class=\"ds-chip\" aria-pressed=\"true\">Modes</button><button class=\"ds-chip\" aria-pressed=\"false\">Pentatonic</button></div>",
+      "css": ".ds-chips{display:flex;gap:8px}.ds-chip{display:inline-flex;align-items:center;height:32px;padding:0 12px;border:1px solid var(--color-line-strong, #D4D4D4);border-radius:9999px;background:var(--color-surface, #FFFFFF);color:var(--color-muted, #6B6B6B);font-family:'Manrope Variable',Manrope,sans-serif;font-size:13px;cursor:pointer;transition:background-color 150ms,color 150ms,border-color 150ms}.ds-chip:hover{border-color:var(--color-control, #8F8F8F);color:var(--color-ink, #111111)}.ds-chip[aria-pressed=true]{border-color:var(--color-ink, #111111);background:var(--color-ink, #111111);color:var(--color-surface, #FFFFFF);font-weight:700}.ds-chip:focus-visible{outline:2px solid var(--color-ink, #111111);outline-offset:2px}"
+    },
+    {
+      "name": "Select Field",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "Labelled native select with a Control Grey border.",
+      "html": "<label class=\"ds-field\"><span>Scale</span><select><option>Major (Ionian)</option><option>Dorian</option></select></label>",
+      "css": ".ds-field{display:flex;flex-direction:column;gap:6px;font-family:'Manrope Variable',Manrope,sans-serif;width:200px}.ds-field span{font-size:12px;color:var(--color-muted, #6B6B6B)}.ds-field select{height:36px;padding:0 32px 0 10px;border:1px solid var(--color-control, #8F8F8F);border-radius:7px;background:var(--color-surface, #FFFFFF);color:var(--color-ink, #111111);font:inherit;font-size:14px;appearance:none;cursor:pointer}.ds-field select:hover{border-color:var(--color-ink, #111111)}.ds-field select:focus-visible{outline:2px solid var(--color-ink, #111111);outline-offset:2px}"
+    },
+    {
+      "name": "Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "The white hairline surface every work area sits on; never nested.",
+      "html": "<section class=\"ds-panel\"><header><h2>Fretboard <span>Frets 0-24 · CAGED position 1</span></h2></header><div class=\"ds-panel-body\">Content</div></section>",
+      "css": ".ds-panel{border:1px solid var(--color-line, #E6E6E6);border-radius:10px;background:var(--color-surface, #FFFFFF);font-family:'Manrope Variable',Manrope,sans-serif;color:var(--color-ink, #111111);max-width:520px}.ds-panel header{padding:16px 20px 0}.ds-panel h2{margin:0;font-size:15px;font-weight:700;letter-spacing:-0.01em}.ds-panel h2 span{margin-left:8px;font-size:13px;font-weight:500;letter-spacing:0;color:var(--color-muted, #6B6B6B)}.ds-panel-body{padding:12px 20px 20px;font-size:14px}"
+    },
+    {
+      "name": "Fretboard Notes",
+      "kind": "custom",
+      "refersTo": "note-root",
+      "description": "Root, scale, outside root, outside note, and the playing ring.",
+      "html": "<div class=\"ds-notes\"><span class=\"ds-note ds-root\">C</span><span class=\"ds-note ds-scale\">D</span><span class=\"ds-note ds-out-root\">C</span><span class=\"ds-note ds-out\">E</span><span class=\"ds-note ds-scale ds-playing\">G</span><span class=\"ds-bare\">F#</span></div>",
+      "css": ".ds-notes{display:flex;align-items:center;gap:18px;padding:16px;background:var(--color-board, #F4F4F4);font-family:'Manrope Variable',Manrope,sans-serif}.ds-note{position:relative;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:9999px;font-size:10.5px;font-weight:700;line-height:1}.ds-root{width:26px;height:26px;font-size:11px;font-weight:800;background:var(--color-accent, #F25C05);color:var(--color-on-accent, #111111)}.ds-scale{background:var(--color-ink, #111111);color:var(--color-surface, #FFFFFF)}.ds-out-root{width:26px;height:26px;font-size:11px;font-weight:900;background:var(--color-board, #F4F4F4);color:var(--color-ink, #111111);box-shadow:inset 0 0 0 2px var(--color-ink, #111111)}.ds-out{background:var(--color-board, #F4F4F4);color:var(--color-muted, #6B6B6B);box-shadow:inset 0 0 0 1.5px var(--color-control, #8F8F8F)}.ds-playing::after{content:'';position:absolute;inset:-5px;border:2px solid var(--color-accent, #F25C05);border-radius:9999px;animation:ds-ring-land 220ms cubic-bezier(0.16,1,0.3,1)}.ds-bare{font-size:10.5px;font-weight:500;color:var(--color-muted, #6B6B6B)}@keyframes ds-ring-land{from{transform:scale(1.35);opacity:0}to{transform:scale(1);opacity:1}}"
+    },
+    {
+      "name": "Side Nav",
+      "kind": "nav",
+      "refersTo": "nav-item-active",
+      "description": "Desktop rail: active item is a white hairline tile.",
+      "html": "<nav class=\"ds-nav\"><a aria-current=\"page\" href=\"#\">Practice</a><a href=\"#\">Ear training</a><a href=\"#\">ChordAI</a><hr><a href=\"#\">Library</a><a href=\"#\">Progress</a></nav>",
+      "css": ".ds-nav{display:flex;flex-direction:column;gap:2px;width:184px;padding:12px;background:var(--color-ground, #FAFAFA);font-family:'Manrope Variable',Manrope,sans-serif}.ds-nav a{display:flex;align-items:center;height:36px;padding:0 10px;border:1px solid transparent;border-radius:7px;font-size:14px;color:var(--color-muted, #6B6B6B);text-decoration:none;transition:background-color 150ms,color 150ms}.ds-nav a:hover{background:var(--color-sunken, #F2F2F2);color:var(--color-ink, #111111)}.ds-nav a[aria-current=page]{border-color:var(--color-line, #E6E6E6);background:var(--color-surface, #FFFFFF);color:var(--color-ink, #111111);font-weight:700}.ds-nav a:focus-visible{outline:2px solid var(--color-ink, #111111);outline-offset:2px}.ds-nav hr{border:none;border-top:1px solid var(--color-line, #E6E6E6);margin:10px 0}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Monochrome Proof",
+    "overview": "Scale Teacher is a practice tool read at arm's length with a guitar in hand. The whole interface is ink on a near-white ground, one neutral scale from #FAFAFA to #111, so that the single accent can carry meaning instead of decoration. Orange marks the root, marks what is sounding right now, and marks the one button that makes sound start. Everything else (selection, emphasis, the main action of a view) is done in ink.\n\nDensity is that of a working instrument panel: hairline-bordered white panels on a pale ground, compact 32 to 36px controls on fine pointers that grow to 44px on touch, numbers in a tabular mono face so tempo and frets never jitter. The fretboard is the hero surface; the tablature and the transport bar sit around it. The one authored motion moment is the playing ring walking the fretboard and the tab in time; every other transition is quick state feedback.\n\nThe world explicitly refuses the dark practice-app default: no charcoal cards, no glowing accents, no colour-coded notes or positions.",
+    "keyCharacteristics": [
+      "One neutral scale plus a single accent with exactly three meanings.",
+      "Flat, hairline-bordered surfaces; no elevation shadows.",
+      "Manrope for everything readable, JetBrains Mono for tab, BPM, formulas and counts.",
+      "Hollow rings, never fades, for notes outside the selected position.",
+      "One persistent transport bar owns all sound."
+    ],
+    "rules": [
+      {
+        "name": "The Three Meanings Rule",
+        "body": "Orange means the root, what is sounding now, or the transport's Play scale button. Nothing else is orange: not selection, not hover, not a view's main action, not a link, not a badge.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Orange Ring Rule",
+        "body": "The playing ring is the only orange ring in the app. Any other ring (outside notes, highlighted intervals, focus) is ink or Control Grey.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Orange Button Rule",
+        "body": "Play scale is the single orange button. A view's main action uses the ink button.",
+        "section": "colors"
+      },
+      {
+        "name": "The No Hex Rule",
+        "body": "Components use Tailwind utilities generated from the @theme tokens. No component hard-codes a hex value.",
+        "section": "colors"
+      },
+      {
+        "name": "The PageTitle Rule",
+        "body": "Every view's display heading comes from PageTitle; nothing else sets type at display size as a heading.",
+        "section": "typography"
+      },
+      {
+        "name": "The No Kicker Rule",
+        "body": "No eyebrow or kicker labels above headings, no small uppercase tracked labels. Labels are sentence-case 12px Muted text attached to the control they name.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Rule",
+        "body": "Any number that updates in place uses tabular figures.",
+        "section": "typography"
+      },
+      {
+        "name": "The Edge Not Shadow Rule",
+        "body": "Nothing casts a shadow. If a surface needs separation, give it a 1px border or a tonal step.",
+        "section": "elevation"
+      },
+      {
+        "name": "The No Nesting Rule",
+        "body": "Panels never nest. A bordered sub-block inside a non-panel column (such as the position tip in the side column) is a plain rule-bordered section, not a Panel.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep orange to its three meanings: root fills, the sounding-now marker (the playing ring and its tab twin), and the Play scale button, with On-Accent Ink on every orange fill.",
+      "Do use Burnt Orange Text (#C2410C) whenever orange is text.",
+      "Do use the ink button for a view's main action.",
+      "Do draw notes outside the selected position as hollow rings: 2px ink with a black label for outside roots, 1.5px Control Grey (#8F8F8F) for the rest.",
+      "Do bound every interactive control with Control Grey (#8F8F8F) or a fill, so its edge holds 3:1.",
+      "Do give every control a 44px target on coarse pointers; dense fretboard and tab notes opt out only by supplying their own expanded hit area.",
+      "Do use the kit's ARIA patterns: aria-pressed segments and chips in named groups, role=\"switch\", real labels on every field, role=\"alert\" for errors, aria-current for nav.",
+      "Do build with Tailwind utilities on the @theme tokens; inline styles only for computed geometry (fret widths, progress bar widths, string thickness).",
+      "Do set view headings with PageTitle."
+    ],
+    "donts": [
+      "Don't add a second orange button, an orange ring other than the playing ring, or orange for selection, hover or links.",
+      "Don't fade notes to show they are outside the position.",
+      "Don't colour-code notes, positions or patterns.",
+      "Don't use shadows beyond 1px edge rings; lift the popover with a border.",
+      "Don't nest panels.",
+      "Don't put eyebrow or kicker labels above headings, or use small uppercase tracked labels.",
+      "Don't hard-code hex values in components.",
+      "Don't let colour or sound be the only channel for a result; pair it with text."
+    ]
+  }
+}

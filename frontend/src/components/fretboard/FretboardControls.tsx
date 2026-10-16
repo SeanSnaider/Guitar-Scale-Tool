@@ -1,367 +1,200 @@
 /**
  * FretboardControls.tsx
  *
- * Full-width horizontal control bar for the Fretboard tab.  Replaces the
- * old vertical sidebar Controls.tsx with a compact, two-row layout that
- * keeps the fretboard the primary visual focus.
- *
- * Row 1 (always visible):
- *   - Root Note dropdown
- *   - Scale Type dropdown (grouped by category)
- *   - Tuning dropdown
- *   - Divider
- *   - Display mode SegmentedToggle (Dots / Notes / Intervals / Patterns)
- *   - "Show muted" checkbox
- *   - "Frets: N" label + range input
- *
- * Row 2 (position controls):
- *   - Position system toggle (CAGED / 3NPS)
- *   - Position number buttons (All, 1-5 or 1-7)
- *
- * All state is read from and written to `useGuitarStore`.
- * On screens narrower than 768 px the three dropdowns stack vertically.
+ * - `FretboardControls`: the control strip above the fretboard: root,
+ *   scale, tuning, display mode, position system and position.
+ * - `FretboardOptions`: the fretboard panel's own options (non-scale notes,
+ *   number of frets), shown in that panel's header.
  */
-
-import React, { useMemo } from 'react';
+import { useId, useMemo, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { useGuitarStore } from '../../store/useGuitarStore';
-import {
-  ALL_NOTES,
-  SCALES,
-  TUNINGS,
-} from '../../data/musicTheory';
-import Dropdown from '../ui/Dropdown';
-import SegmentedToggle from '../ui/SegmentedToggle';
+import type { DisplayMode, PositionSystem } from '../../store/useGuitarStore';
+import { ALL_NOTES, ENHARMONIC_MAP, SCALES, TUNINGS, spellScale } from '../../data/musicTheory';
+import { positionCount } from '../../practice/positions';
+import { SegmentedControl, Select, Switch, cn } from '../../ui';
 
-/** Display mode options shown in the segmented toggle. */
-const DISPLAY_MODE_OPTIONS = [
-  { value: 'dots',      label: 'Dots' },
-  { value: 'notes',     label: 'Notes' },
+const DISPLAY_MODES = [
+  { value: 'dots', label: 'Dots' },
+  { value: 'notes', label: 'Notes' },
   { value: 'intervals', label: 'Intervals' },
-  { value: 'patterns',  label: 'Patterns' },
+  { value: 'patterns', label: 'Patterns' },
 ] as const;
 
-/**
- * FretboardControls
- *
- * Renders the horizontal control bar above the fretboard.  Uses the Studio
- * Walnut design tokens exclusively — no Tailwind class names for colours so
- * the tokens can be changed globally without touching this file.
- *
- * @returns The rendered control bar element.
- */
-export default function FretboardControls(): React.ReactElement {
-  const {
-    selectedRoot,
-    setSelectedRoot,
-    selectedScale,
-    setSelectedScale,
-    currentTuning,
-    setCurrentTuning,
-    displayMode,
-    setDisplayMode,
-    showNonScaleNotes,
-    setShowNonScaleNotes,
-    numFrets,
-    setNumFrets,
-    positionSystem,
-    setPositionSystem,
-    selectedPosition,
-    setSelectedPosition,
-  } = useGuitarStore();
+const POSITION_SYSTEMS = [
+  { value: 'caged', label: 'CAGED' },
+  // Name starts with the visible text so voice control ("click 3NPS") works
+  { value: '3nps', label: '3NPS', ariaLabel: '3NPS, three notes per string' },
+] as const;
 
-  // ── Dropdown option arrays ─────────────────────────────────────────────────
+/** Roots are stored as sharp names; show both spellings for the black keys ("A# / Bb"). */
+const ROOT_OPTIONS = ALL_NOTES.map((n) => ({ value: n, label: ENHARMONIC_MAP[n] ? `${n} / ${ENHARMONIC_MAP[n]}` : n }));
 
-  /** Root note options — all 12 chromatic notes */
-  const rootOptions = useMemo(
-    () => ALL_NOTES.map((n) => ({ value: n, label: n })),
-    []
+const SCALE_OPTIONS = Object.entries(SCALES).map(([key, scale]) => ({
+  value: key,
+  label: scale.name,
+  group: scale.category.charAt(0).toUpperCase() + scale.category.slice(1),
+}));
+
+const TUNING_OPTIONS = Object.entries(TUNINGS).map(([key, t]) => ({ value: key, label: t.name }));
+
+/** Small caption above a control group that has no <label> of its own. */
+function Caption({ children }: { children: string }) {
+  return (
+    <span aria-hidden="true" className="text-xs text-muted">
+      {children}
+    </span>
   );
+}
 
-  /** Scale options grouped by their `category` field */
-  const scaleOptions = useMemo(
-    () =>
-      Object.entries(SCALES).map(([key, scale]) => ({
-        value: key,
-        label: scale.name,
-        group: scale.category.charAt(0).toUpperCase() + scale.category.slice(1),
-      })),
-    []
-  );
+export default function FretboardControls() {
+  const selectedRoot = useGuitarStore((s) => s.selectedRoot);
+  const setSelectedRoot = useGuitarStore((s) => s.setSelectedRoot);
+  const selectedScale = useGuitarStore((s) => s.selectedScale);
+  const setSelectedScale = useGuitarStore((s) => s.setSelectedScale);
+  const currentTuning = useGuitarStore((s) => s.currentTuning);
+  const setCurrentTuning = useGuitarStore((s) => s.setCurrentTuning);
+  const displayMode = useGuitarStore((s) => s.displayMode);
+  const setDisplayMode = useGuitarStore((s) => s.setDisplayMode);
+  const positionSystem = useGuitarStore((s) => s.positionSystem);
+  const setPositionSystem = useGuitarStore((s) => s.setPositionSystem);
+  const selectedPosition = useGuitarStore((s) => s.selectedPosition);
+  const setSelectedPosition = useGuitarStore((s) => s.setSelectedPosition);
 
-  /** Tuning options */
-  const tuningOptions = useMemo(
-    () =>
-      Object.entries(TUNINGS).map(([key, tuning]) => ({
-        value: key,
-        label: tuning.name,
-      })),
-    []
-  );
-
-  /** Resolve the current tuning key from its notes fingerprint */
   const currentTuningKey = useMemo(
-    () =>
-      Object.keys(TUNINGS).find(
-        (k) => TUNINGS[k].notes.join(',') === currentTuning.notes.join(',')
-      ) ?? 'standard',
-    [currentTuning]
+    () => Object.keys(TUNINGS).find((k) => TUNINGS[k].notes.join(',') === currentTuning.notes.join(',')) ?? 'standard',
+    [currentTuning],
   );
 
-  /** How many position buttons to render (5 for CAGED, 7 for 3NPS) */
-  const positionCount = positionSystem === 'caged' ? 5 : 7;
+  // CAGED has five shapes; 3NPS has one pattern per scale degree
+  const count = positionCount(positionSystem, SCALES[selectedScale]?.intervals ?? []);
+  const positionOptions = [
+    { value: 'all', label: 'All', ariaLabel: 'All positions' },
+    ...Array.from({ length: count }, (_, i) => ({
+      value: String(i + 1),
+      label: String(i + 1),
+      ariaLabel: `Position ${i + 1}`,
+    })),
+  ];
 
-  // ── Shared button factory ─────────────────────────────────────────────────
-
-  /** Amber-filled active button style, transparent inactive. */
-  const positionBtnStyle = (active: boolean): React.CSSProperties => ({
-    padding: '4px 10px',
-    borderRadius: 6,
-    fontSize: 12,
-    fontFamily: 'var(--font-body)',
-    fontWeight: active ? 600 : 400,
-    border: 'none',
-    cursor: 'pointer',
-    background: active ? 'var(--accent-primary)' : 'var(--bg-elevated)',
-    color: active ? '#1C1714' : 'var(--text-secondary)',
-    transition: 'all 150ms ease',
-  });
-
-  const sysBtnStyle = (active: boolean): React.CSSProperties => ({
-    padding: '5px 14px',
-    borderRadius: 6,
-    fontSize: 12,
-    fontFamily: 'var(--font-body)',
-    fontWeight: active ? 600 : 400,
-    border: '1px solid ' + (active ? 'var(--accent-primary)' : 'var(--border-subtle)'),
-    cursor: 'pointer',
-    background: active ? 'var(--accent-primary)' : 'transparent',
-    color: active ? '#1C1714' : 'var(--text-secondary)',
-    transition: 'all 150ms ease',
-  });
+  // Phones: the strip collapses behind a one-line summary so the fretboard
+  // leads the first screen. Tablet and up always show it.
+  const [open, setOpen] = useState(false);
+  const controlsId = useId();
+  const tuningName = TUNINGS[currentTuningKey]?.name ?? currentTuning.name;
+  const summary = `${spellScale(selectedRoot, selectedScale)[0] ?? selectedRoot} ${SCALES[selectedScale]?.name ?? selectedScale} · ${tuningName} · ${
+    DISPLAY_MODES.find((m) => m.value === displayMode)?.label ?? displayMode
+  }`;
 
   return (
-    <div
-      style={{
-        background: 'var(--bg-surface)',
-        borderBottom: '1px solid var(--border-subtle)',
-        padding: '12px 16px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 10,
-      }}
-    >
-      {/* ── Row 1: dropdowns + display options ── */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'flex-end',
-          flexWrap: 'wrap',
-          gap: 12,
-        }}
+    <div>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={controlsId}
+        onClick={() => setOpen(!open)}
+        className="flex h-11 w-full items-center justify-between gap-3 rounded-control border border-control bg-surface px-3 text-left text-sm md:hidden"
       >
-        {/* Left group: three dropdowns */}
-        <div
-          style={{
-            display: 'flex',
-            gap: 12,
-            flexWrap: 'wrap',
-            alignItems: 'flex-end',
-          }}
-        >
-          <Dropdown
-            label="Root Note"
-            value={selectedRoot}
-            onChange={setSelectedRoot}
-            options={rootOptions}
-            className="dropdown-root"
-          />
-          <Dropdown
-            label="Scale Type"
-            value={selectedScale}
-            onChange={setSelectedScale}
-            options={scaleOptions}
-          />
-          <Dropdown
-            label="Tuning"
-            value={currentTuningKey}
-            onChange={(key) => setCurrentTuning(TUNINGS[key])}
-            options={tuningOptions}
-          />
-        </div>
-
-        {/* Centre divider */}
-        <div
-          style={{
-            width: 1,
-            background: 'var(--border-subtle)',
-            height: 32,
-            margin: '0 4px',
-            flexShrink: 0,
-            alignSelf: 'center',
-          }}
-          aria-hidden="true"
-        />
-
-        {/* Right group: display mode + muted toggle + frets */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            flexWrap: 'wrap',
-          }}
-        >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span
-              style={{
-                fontSize: 11,
-                color: 'var(--text-secondary)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-              }}
-            >
-              Display
-            </span>
-            <SegmentedToggle
-              options={[...DISPLAY_MODE_OPTIONS]}
-              value={displayMode}
-              onChange={(v) => setDisplayMode(v as typeof displayMode)}
-            />
-          </div>
-
-          {/* Show muted notes checkbox */}
-          <label
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              cursor: 'pointer',
-              fontSize: 12,
-              color: 'var(--text-secondary)',
-              userSelect: 'none',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={showNonScaleNotes}
-              onChange={(e) => setShowNonScaleNotes(e.target.checked)}
-              style={{
-                width: 14,
-                height: 14,
-                accentColor: 'var(--accent-primary)',
-                cursor: 'pointer',
-              }}
-            />
-            Muted notes
-          </label>
-
-          {/* Frets range */}
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 4,
-              minWidth: 100,
-            }}
-          >
-            <span
-              style={{
-                fontSize: 11,
-                color: 'var(--text-secondary)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-              }}
-            >
-              Frets: {numFrets}
-            </span>
-            <input
-              type="range"
-              min={12}
-              max={24}
-              value={numFrets}
-              onChange={(e) => setNumFrets(parseInt(e.target.value, 10))}
-              style={{
-                accentColor: 'var(--accent-primary)',
-                cursor: 'pointer',
-                width: '100%',
-              }}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* ── Row 2: position system + position buttons ── */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          flexWrap: 'wrap',
-        }}
-      >
-        <span
-          style={{
-            fontSize: 11,
-            color: 'var(--text-secondary)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            marginRight: 2,
-          }}
-        >
-          Position:
+        <span className="min-w-0 truncate">
+          <span className="sr-only">Scale settings: </span>
+          <span className="font-bold">{summary}</span>
         </span>
-
-        {/* CAGED / 3NPS toggle */}
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button
-            type="button"
-            onClick={() => { setPositionSystem('caged'); setSelectedPosition(1); }}
-            style={sysBtnStyle(positionSystem === 'caged')}
-          >
-            CAGED
-          </button>
-          <button
-            type="button"
-            onClick={() => { setPositionSystem('3nps'); setSelectedPosition(1); }}
-            style={sysBtnStyle(positionSystem === '3nps')}
-          >
-            3NPS
-          </button>
-        </div>
-
-        {/* Divider */}
-        <div
-          style={{
-            width: 1,
-            background: 'var(--border-subtle)',
-            height: 20,
-            flexShrink: 0,
-          }}
+        <ChevronDown
+          size={16}
           aria-hidden="true"
+          className={cn('shrink-0 text-muted transition-transform', open && 'rotate-180')}
+        />
+      </button>
+      <div
+        id={controlsId}
+        className={cn('flex flex-wrap items-end gap-x-4 gap-y-3 max-md:mt-3', !open && 'max-md:hidden')}
+      >
+        <Select
+          label="Root note"
+          value={selectedRoot}
+          onChange={setSelectedRoot}
+          options={ROOT_OPTIONS}
+          className="w-[76px]"
+        />
+        <Select
+          label="Scale"
+          value={selectedScale}
+          onChange={setSelectedScale}
+          options={SCALE_OPTIONS}
+          className="w-[200px] max-sm:w-full"
+        />
+        <Select
+          label="Tuning"
+          value={currentTuningKey}
+          onChange={(key) => setCurrentTuning(TUNINGS[key])}
+          options={TUNING_OPTIONS}
+          className="w-[150px]"
         />
 
-        {/* All + numbered position buttons */}
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            onClick={() => setSelectedPosition(null)}
-            style={positionBtnStyle(selectedPosition === null)}
-          >
-            All
-          </button>
-          {Array.from({ length: positionCount }, (_, i) => i + 1).map((pos) => (
-            <button
-              key={pos}
-              type="button"
-              onClick={() => setSelectedPosition(pos)}
-              style={positionBtnStyle(selectedPosition === pos)}
-            >
-              {pos}
-            </button>
-          ))}
+        <div className="flex flex-col gap-1.5">
+          <Caption>Display</Caption>
+          <SegmentedControl
+            ariaLabel="Display mode"
+            options={DISPLAY_MODES}
+            value={displayMode}
+            onChange={(v) => setDisplayMode(v as DisplayMode)}
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Caption>Position</Caption>
+          <div className="flex flex-wrap gap-1.5">
+            <SegmentedControl
+              ariaLabel="Position system"
+              options={POSITION_SYSTEMS}
+              value={positionSystem}
+              onChange={(v) => {
+                setPositionSystem(v as PositionSystem);
+                setSelectedPosition(1);
+              }}
+            />
+            <SegmentedControl
+              ariaLabel="Position"
+              options={positionOptions}
+              value={selectedPosition === null ? 'all' : selectedPosition <= count ? String(selectedPosition) : null}
+              onChange={(v) => setSelectedPosition(v === 'all' ? null : Number(v))}
+            />
+          </div>
+        </div>
+        {/* Phones: the fretboard panel's own options live here, inside the disclosure */}
+        <div className="flex w-full flex-wrap items-center gap-x-5 gap-y-3 md:hidden">
+          <FretboardOptions />
         </div>
       </div>
     </div>
+  );
+}
+
+/** Fretboard panel options: non-scale notes on/off and the number of frets. */
+export function FretboardOptions() {
+  const showNonScaleNotes = useGuitarStore((s) => s.showNonScaleNotes);
+  const setShowNonScaleNotes = useGuitarStore((s) => s.setShowNonScaleNotes);
+  const numFrets = useGuitarStore((s) => s.numFrets);
+  const setNumFrets = useGuitarStore((s) => s.setNumFrets);
+  const fretsId = useId();
+
+  return (
+    <>
+      <Switch label="Non-scale notes" checked={showNonScaleNotes} onChange={setShowNonScaleNotes} />
+      <label htmlFor={fretsId} className="flex items-center gap-2 text-[13px] text-muted">
+        Frets
+        <input
+          id={fretsId}
+          type="range"
+          min={12}
+          max={24}
+          value={numFrets}
+          onChange={(e) => setNumFrets(Number(e.target.value))}
+          aria-valuetext={`${numFrets} frets`}
+          className="w-24 cursor-pointer"
+        />
+        <span className="tabular w-5 font-mono text-xs text-ink">{numFrets}</span>
+      </label>
+    </>
   );
 }
