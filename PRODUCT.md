@@ -42,7 +42,7 @@ The mechanism is simple and explainable, and the app is honest about how it work
 
 - The guitar is in hand, so attention is split. The screen gets read at arm's length in short glances. Input comes from a trackpad or keyboard between takes, or a tap on a phone propped on a stand.
 - Audio comes in through the browser's microphone API, either a built-in mic or an audio interface (Focusrite Scarlett). Output is hand-written Web Audio synthesis (ADSR envelopes) plus a look-ahead metronome.
-- The app is local-first, with no accounts. ChordAI calls `api.anthropic.com` directly from the browser using the user's own API key. The key is held in memory only and never persisted.
+- The app is local-first, with no accounts and no server. Claude features call `api.anthropic.com` directly from the browser (Anthropic TypeScript SDK) using the user's own API key, entered once in a panel shared by every Claude feature. It's held in memory until reload unless the user opts into "Remember on this device" (localStorage). It is never put in the build.
 - It's deployed as a static frontend on Render: https://guitar-scale-tool.onrender.com/
 
 ## Capabilities and Constraints
@@ -55,10 +55,11 @@ The mechanism is simple and explainable, and the app is honest about how it work
 - **Reference:** scale info.
 - **Progress:** XP, levels, streaks, scale mastery.
 - **ChordAI:** chord detection plus Claude-generated progressions with conversational follow-ups.
+- **Coach:** researched practice plans for a stated goal and level, with scales that open on the fretboard.
 
-**Persistence is being moved off the FastAPI + SQLite backend.** Treat the backend as legacy. Don't design new features around it, and don't put copy in the UI that tells users to start a server. Where persistence will end up (client-side or elsewhere) is **undecided**.
+**Persistence is client-side.** The FastAPI backend and the agent server were removed on 2026-10-15. Settings and progress live in `useGuitarStore`; finished sessions, the chord log and scale attempt counts live in `useHistoryStore` (both localStorage). Don't add features that need a server.
 
-**Practice Coach** is an agent-driven coaching feature. It exists outside this branch and is expected to come back. It isn't currently in the app, so don't present it as a live feature until it returns.
+**Coach** is FretAgent rebuilt in the browser (2026-10-15): goal + level in, a researched practice plan out, on the user's own key. Claude's web search and fetch replace the old Subconscious engine; the theory and research tools run in the page (`src/coach/`). Plans are saved locally.
 
 **Terminology:**
 - The product name is **Scale Teacher**. Use it everywhere: the nav wordmark, the document title and the docs. "Guitar Learning Tool" and "guitar-scale-tool" are stale names.

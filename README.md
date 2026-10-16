@@ -94,128 +94,86 @@ and three-note-per-string (7 patterns) overlays.
 **Ear training.** A separate 10-question quiz flow with four modes: intervals, single
 notes, scale identification, and fretboard sequence.
 
-**Scale mastery tracking.** The backend owns the progression rule: a scale is marked
-learned after 3 consecutive correct attempts at BPM ≥ 120. `is_learned` is sticky once
-earned — a later miss resets your streak but doesn't take the badge back. XP, levels, and
-achievement unlocks sit on top of that in the Zustand store, with a progress dashboard.
+**Scale mastery tracking.** A scale is marked learned after 3 clean runs in a row in
+Sequence practice at 120 BPM or faster. Learned is sticky: a later miss resets the run
+count but doesn't take the badge back. XP, levels, streaks and achievements sit on top of
+that, with a progress dashboard.
 
 **ChordAI.** Detect a chord, pick a genre, and get a progression back from Claude
-(Sonnet 5.5). Before
-the first request the app pulls your chord stats and scale mastery from the backend in
-parallel and formats them into a practice-history block appended to the system prompt, so
-suggestions are grounded in what you've actually been playing. The response carries a
-fenced JSON block that gets parsed and rendered on the fretboard; follow-up turns keep the
-conversation going.
+(Sonnet 5.5). The response carries a fenced JSON block that gets parsed and rendered as
+chord chips; follow-up turns keep the conversation going.
 
-**Practice Coach.** An Express sidecar streams a multi-turn agent over SSE (`thought`,
-`chunk`, `answer` events), with music-theory lookup and research-paper search available as
-tools mid-stream. It lives outside this branch for now and isn't in the current app.
+**Coach.** FretAgent ([SeanSnaider/FretAgent](https://github.com/SeanSnaider/FretAgent)),
+rebuilt to run in the browser. Describe a goal and pick a level; a Claude (Sonnet 5.5) agent
+researches it and streams back a 400-600 word practice plan. Its tools:
 
-**Persistence.** FastAPI + SQLite behind 4 routers and 13 endpoints, storing practice
-sessions, scale mastery, scale attempts, and chord detections. Scoped by a client-generated
-`X-Session-ID` header — no accounts, no auth, local-first. This server is being phased
-out; without it the app keeps your progress in the browser (localStorage).
+| Tool | Runs | What it does |
+|---|---|---|
+| `web_search` | Anthropic (server tool) | Tutorials, techniques, song references. Capped at 2 per plan |
+| `web_fetch` | Anthropic (server tool) | Reads one page in full, capped at 8k tokens |
+| `music_theory_lookup` | In the page | Answers from the app's own theory engine: all 48 scales, chords from stacked thirds, frets for your current tuning, CAGED windows |
+| `research_paper_lookup` | In the page | Keyword search over 12 curated practice-science excerpts (`src/coach/papers.json`) |
 
-**Tests.** 320 Vitest cases on the frontend and 50 async pytest cases against an in-memory
-SQLite database on the backend.
+The research steps (including Claude's summarised thinking) stream into a trace, the plan
+renders as markdown with tab blocks, every scale it names gets a button that opens it on the
+fretboard, and finished plans are saved in the browser. The agent loop is capped at 8 model
+turns. The prompt is personalised from local progress: your tuning, learned scales, and most
+detected chords.
+
+**Persistence.** None on a server. Settings, progress, finished sessions, the chord log
+and per-scale attempt counts all live in the browser (localStorage, via Zustand persist).
+The logs are capped (100 sessions, 200 chords) so storage can't grow without bound.
+
+**Tests.** Vitest + Testing Library.
 
 Audio synthesis is hand-rolled Web Audio (ADSR envelopes, no Tone.js), and the metronome
 uses look-ahead scheduling so it doesn't drift at high BPM.
 
 ## Stack
 
-Three services that run independently. The frontend talks to both backends; they never
-talk to each other. The FastAPI backend is being phased out, and the agent server isn't in
-this branch.
+One static single-page app. There is no backend: the only network calls go from the
+browser straight to Anthropic, using your own API key.
 
 ```
-Browser (React SPA)
+Browser (React SPA, progress in localStorage)
     │
-    ├── REST, X-Session-ID header ──► FastAPI ──► SQLite
-    │
-    ├── HTTP + SSE ─────────────────► Agent server (Express) ──► Claude
-    │
-    └── direct fetch ───────────────► api.anthropic.com   (ChordAI, user's own key)
+    └── @anthropic-ai/sdk ──► api.anthropic.com   (ChordAI + Coach, your own key;
+                                                   Coach also uses web search/fetch)
 ```
 
 | Layer | Tech |
 |---|---|
 | Frontend | React 19, TypeScript (strict), Zustand v5, Tailwind CSS v4, Vite 7 |
 | Audio | Web Audio API — `AnalyserNode` FFT, custom ADSR synthesis, look-ahead metronome |
-| Backend | FastAPI 0.115, SQLAlchemy 2.0 async, aiosqlite, Pydantic v2, uvicorn |
-| Agent server | Express 5, Subconscious streaming SDK, Zod |
-| LLM | Anthropic Messages API, called directly from the browser |
-| Tests | Vitest + Testing Library (frontend), pytest-asyncio (backend) |
-| Hosting | Render |
+| LLM | Anthropic TypeScript SDK, called directly from the browser |
+| Tests | Vitest + Testing Library |
+| Hosting | Render (static) |
 
-The ChordAI panel calls `api.anthropic.com` straight from the browser with
-`anthropic-dangerous-direct-browser-access`. That's a deliberate trade for a local-first
-tool with no accounts: you paste your own key, it lives in React state only, and it is
-never persisted or sent anywhere else. Anything multi-user would need a server proxy
-instead.
+Calling Anthropic from the browser (`dangerouslyAllowBrowser: true` in the SDK) is a
+deliberate trade for a single-user tool with no accounts. You paste your own key into the
+app. By default it's held in memory until you reload; "Remember on this device" saves it in
+localStorage instead. It's never put in the build: a `VITE_` env var would ship the key to
+every visitor of a deployed copy. Anything multi-user would need a server proxy instead.
+
+The key must be a Console API key (`sk-ant-api...`, from console.anthropic.com). A Claude
+subscription token from `claude setup-token` is for Claude Code and won't work here.
 
 ## Running it
 
-The frontend runs on its own and keeps progress in the browser. The backend adds server-side
-history (it's being phased out). The agent server and its Practice Coach aren't in this
-branch.
-
 ```bash
 git clone https://github.com/SeanSnaider/Guitar-Scale-Tool
-cd Guitar-Scale-Tool
-```
-
-**Frontend** — http://localhost:5173
-
-```bash
-cd frontend
+cd Guitar-Scale-Tool/frontend
 npm install
-npm run dev
+npm run dev                      # http://localhost:5173
 ```
 
-**Backend** — http://localhost:8000
-
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-cp .env.example .env
-uvicorn app.main:app --reload
-```
-
-Tables are created on startup; there's no migration step.
-
-**Agent server** — http://localhost:3001
-
-```bash
-cd agent-server
-npm install
-echo "SUBCONSCIOUS_API_KEY=your-key-here" > .env
-npm run dev
-```
-
-Vite proxies `/api/agent` and `/api/tools` to this service, so the browser never hits it
-directly.
-
-### Environment
-
-| Where | Variable | Default |
-|---|---|---|
-| `frontend` | `VITE_API_URL` | `http://localhost:8000` |
-| `backend/.env` | `DATABASE_URL` | `sqlite+aiosqlite:///./guitar_learning.db` |
-| `backend/.env` | `CORS_ORIGINS` (comma-separated or JSON list) | `http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173` |
-| `agent-server/.env` | `SUBCONSCIOUS_API_KEY` | none — required |
-| `agent-server/.env` | `PORT` / `CORS_ORIGIN` / `TOOL_BASE_URL` | `3001` / `http://localhost:5173` / `http://localhost:3001` |
-
-There is no `ANTHROPIC_API_KEY` variable. The Claude key for ChordAI is pasted into the UI
-at runtime and held in memory only.
+There are no environment variables. Paste your Anthropic API key into ChordAI (or the
+Coach) the first time you use it.
 
 ### Tests
 
 ```bash
 cd frontend && npm test          # vitest run
-cd backend && pytest             # pytest-asyncio, in-memory SQLite
 ```
 
 Detection needs microphone permission. Works best with a direct audio interface, but a

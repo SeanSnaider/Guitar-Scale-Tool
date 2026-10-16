@@ -253,7 +253,8 @@ export type TabId =
   | 'ear-training'
   | 'reference'
   | 'progress'
-  | 'chordai';
+  | 'chordai'
+  | 'coach';
 
 // ---- Default values ----
 

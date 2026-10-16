@@ -6,7 +6,7 @@ import { BrandMark } from './BrandMark';
 /**
  * MobileTabBar
  *
- * Bottom navigation on phones (<768px): all five destinations, icon over
+ * Bottom navigation on phones (<768px): all six destinations, icon over
  * label, thumb-reachable and clear of the home indicator.
  */
 export function MobileTabBar() {
@@ -19,7 +19,7 @@ export function MobileTabBar() {
       aria-label="Main navigation"
       className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] md:hidden"
     >
-      <ul className="grid h-[var(--tabbar-h)] grid-cols-5">
+      <ul className="grid h-[var(--tabbar-h)] grid-cols-6">
         {NAV_ITEMS.map((item) => {
           const active = item.id === current.id;
           const Icon = item.icon;

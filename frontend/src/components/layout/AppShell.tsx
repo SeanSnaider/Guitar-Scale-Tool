@@ -8,7 +8,7 @@
  *   - <768px: compact header on top, transport bar above a bottom tab bar.
  *
  * Every view renders inside one <main> with a visually hidden <h1> naming it.
- * ChordAI and Progress are code-split (React.lazy).
+ * ChordAI, Coach and Progress are code-split (React.lazy).
  */
 import React, { Suspense, useEffect, useRef } from 'react';
 import { useGuitarStore } from '../../store/useGuitarStore';
@@ -22,6 +22,7 @@ import EarTrainingView from '../ear-training/EarTrainingView';
 
 const ChordAI = React.lazy(() => import('../ChordAI'));
 const ProgressDashboard = React.lazy(() => import('../ProgressDashboard'));
+const PracticeCoach = React.lazy(() => import('../coach/PracticeCoach'));
 
 /** Shown while a code-split view loads. */
 function ViewLoading() {
@@ -77,6 +78,15 @@ function AppShell() {
         <ViewFrame narrow>
           <Suspense fallback={<ViewLoading />}>
             <ChordAI />
+          </Suspense>
+        </ViewFrame>
+      );
+      break;
+    case 'coach':
+      content = (
+        <ViewFrame narrow>
+          <Suspense fallback={<ViewLoading />}>
+            <PracticeCoach />
           </Suspense>
         </ViewFrame>
       );

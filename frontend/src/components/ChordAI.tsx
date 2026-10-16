@@ -5,7 +5,8 @@
  *
  * Renders the complete ChordAI UI: microphone chord detection, genre
  * selection, chord progression display, a multi-turn conversation window
- * backed by the Anthropic Claude API, and API key entry.
+ * backed by the Anthropic Claude API, and API key entry (shared with the
+ * Coach, see components/ai/ApiKeyPanel).
  *
  * All business logic lives in the `useChordAI` hook. This file is pure rendering.
  * The API key panel is setup, not the task, so it sits last once a key is set
@@ -23,6 +24,7 @@
 import { useEffect, useId, useRef } from 'react';
 import { Mic } from 'lucide-react';
 import { useChordAI, GENRES } from '../hooks/useChordAI';
+import ApiKeyPanel from './ai/ApiKeyPanel';
 import { Button, Chip, Notice, Panel, Select, TextField, cn, PageTitle } from '../ui';
 
 /** Dims an aria-disabled Button the way `disabled` would, without losing focus. */
@@ -40,88 +42,6 @@ function Spinner() {
   );
 }
 
-interface ApiKeyPanelProps {
-  apiKeyInput: string;
-  showApiKey: boolean;
-  apiKeySet: boolean;
-  onInputChange: (v: string) => void;
-  onToggleShow: () => void;
-  onSetKey: () => void;
-  onClearKey: () => void;
-  onKeyDown: (e: React.KeyboardEvent) => void;
-}
-
-/**
- * ApiKeyPanel renders the Anthropic API key entry form when no key is set,
- * or an "active" line when the key has been provided.
- * The key is stored in memory only — never persisted to disk or localStorage.
- *
- * Setting the key unmounts the form, so focus moves to the active line's
- * Clear button; clearing moves it back to the key field.
- *
- * @param props - API key state and handlers from the useChordAI hook.
- */
-function ApiKeyPanel({
-  apiKeyInput, showApiKey, apiKeySet,
-  onInputChange, onToggleShow, onSetKey, onClearKey, onKeyDown,
-}: ApiKeyPanelProps) {
-  const keyFieldRef = useRef<HTMLInputElement>(null);
-  const clearRef = useRef<HTMLButtonElement>(null);
-  const prevKeySet = useRef(apiKeySet);
-
-  useEffect(() => {
-    // Only on a change (a user set/clear), never on mount
-    if (prevKeySet.current === apiKeySet) return;
-    prevKeySet.current = apiKeySet;
-    if (apiKeySet) clearRef.current?.focus();
-    else keyFieldRef.current?.focus();
-  }, [apiKeySet]);
-
-  return (
-    <Panel title="Anthropic API key" headingLevel={3}>
-      {!apiKeySet ? (
-        <div className="flex items-start gap-2">
-          <TextField
-            ref={keyFieldRef}
-            className="flex-1"
-            label="Anthropic API key"
-            hideLabel
-            type={showApiKey ? 'text' : 'password'}
-            autoComplete="off"
-            spellCheck={false}
-            value={apiKeyInput}
-            onChange={(e) => onInputChange(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="sk-ant-..."
-            hint="Held in memory only. Never saved."
-            trailing={
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onToggleShow}
-                aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
-                title={showApiKey ? 'Hide key' : 'Show key'}
-              >
-                {showApiKey ? 'Hide' : 'Show'}
-              </Button>
-            }
-          />
-          <Button variant="secondary" onClick={onSetKey} disabled={!apiKeyInput.trim()}>
-            Set key
-          </Button>
-        </div>
-      ) : (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-[13px] text-muted">Key active for this session</p>
-          <Button ref={clearRef} variant="ghost" size="sm" onClick={onClearKey}>
-            Clear
-          </Button>
-        </div>
-      )}
-    </Panel>
-  );
-}
-
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 /**
@@ -134,8 +54,7 @@ function ApiKeyPanel({
  */
 export default function ChordAI() {
   const {
-    apiKeyInput, showApiKey, apiKeySet,
-    setApiKeyInput, setShowApiKey, handleSetApiKey, handleClearApiKey,
+    apiKeySet,
 
     audioDevices, selectedDevice, setSelectedDevice, getUserMediaSupported,
 
@@ -194,18 +113,7 @@ export default function ChordAI() {
     void handleGenerate();
   };
 
-  const keyPanel = (
-    <ApiKeyPanel
-      apiKeyInput={apiKeyInput}
-      showApiKey={showApiKey}
-      apiKeySet={apiKeySet}
-      onInputChange={setApiKeyInput}
-      onToggleShow={() => setShowApiKey(!showApiKey)}
-      onSetKey={handleSetApiKey}
-      onClearKey={handleClearApiKey}
-      onKeyDown={(e) => e.key === 'Enter' && handleSetApiKey()}
-    />
-  );
+  const keyPanel = <ApiKeyPanel />;
 
   return (
     <div className="flex flex-col gap-4">
