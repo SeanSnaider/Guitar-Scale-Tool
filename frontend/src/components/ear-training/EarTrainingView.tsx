@@ -11,16 +11,14 @@
  *                  identifies the scale type.
  *   4. Sequence  — preserved from PracticeMode; user plays scale notes on the
  *                  fretboard in order. Mastery is tracked locally in the store
- *                  (sequenceMastery); the backend is an optional sync.
+ *                  (sequenceMastery).
  *
  * Session flow:
  *   Start screen → 10-question quiz → End screen (score + "Try Again")
  *
- * Backend integration:
- *   - startSession / endSession called at quiz boundaries.
- *   - recordScaleAttempt is fire-and-forget sync (scales questions, sequence
- *     runs); its response never drives local state.
- *   - All backend errors are silently swallowed; they never block the UI.
+ * History (useHistoryStore, this browser only):
+ *   - a finished session is logged with its mode, scale, BPM and accuracy;
+ *   - recordScaleAttempt counts Scales answers and Sequence notes.
  *
  * Store integration:
  *   - earTrainingMode / setEarTrainingMode — persisted mode selection.
@@ -39,12 +37,7 @@ import { useGuitarStore } from '../../store/useGuitarStore';
 import { learnedScaleKey } from '../../store/progress';
 import { audioEngine } from '../../audio/AudioEngine';
 import { ALL_NOTES, SCALES, getScaleNotes } from '../../data/musicTheory';
-import {
-  startSession,
-  endSession,
-  recordScaleAttempt,
-  type PracticeSession,
-} from '../../services/api';
+import { useHistoryStore } from '../../store/useHistoryStore';
 import { Button, Notice, Panel, SegmentedControl, cn, PageTitle } from '../../ui';
 import ProgressBar, { type AnswerStatus } from './ProgressBar';
 import QuestionPrompt from './QuestionPrompt';
@@ -391,8 +384,8 @@ export default function EarTrainingView(): React.ReactElement {
     [],
   );
 
-  // Backend session
-  const backendSessionRef = useRef<PracticeSession | null>(null);
+  const logSession = useHistoryStore((s) => s.logSession);
+  const recordScaleAttempt = useHistoryStore((s) => s.recordScaleAttempt);
   const sessionStartTimeRef = useRef<number | null>(null);
 
   // ── Sequence mode state (preserved from PracticeMode) ─────────────────────
@@ -453,22 +446,38 @@ export default function EarTrainingView(): React.ReactElement {
     [],
   );
 
-  // ── Backend: record scale attempt ──────────────────────────────────────────
+  // ── History: scale attempts ────────────────────────────────────────────────
 
   /**
-   * Fire-and-forget sync of a scale attempt to the optional backend. The
-   * response is ignored: mastery is tracked locally (see recordSequenceMastery).
+   * Counts an attempt at the current scale in the local history. Mastery
+   * itself is tracked separately (see recordSequenceMastery).
    *
    * @param correct - Whether the user answered correctly.
-   * @param bpm     - Current metronome BPM.
    */
   const reportScaleAttempt = useCallback(
-    (correct: boolean, bpm: number) => {
-      recordScaleAttempt(scaleKey, bpm, correct, backendSessionRef.current?.id).catch(() => {
-        // Backend unreachable: local progress is unaffected
+    (correct: boolean) => recordScaleAttempt(scaleKey, correct),
+    [scaleKey, recordScaleAttempt],
+  );
+
+  /**
+   * Logs the session that just finished, if one was started.
+   *
+   * @param accuracy - 0–1, or null when nothing was answered.
+   */
+  const logFinishedSession = useCallback(
+    (accuracy: number | null) => {
+      const started = sessionStartTimeRef.current;
+      if (started == null) return;
+      sessionStartTimeRef.current = null;
+      logSession({
+        mode: activeMode,
+        scaleKey,
+        bpm: metronome.bpm,
+        startedAt: new Date(started).toISOString(),
+        accuracy,
       });
     },
-    [scaleKey],
+    [activeMode, scaleKey, metronome.bpm, logSession],
   );
 
   /**
@@ -527,14 +536,14 @@ export default function EarTrainingView(): React.ReactElement {
       if (posInScale === scaleNotes.length - 1) {
         sequenceRunsRef.current += 1;
         if (runQualifiesRef.current) recordSequenceMastery('run');
-        reportScaleAttempt(true, bpm);
+        reportScaleAttempt(true);
       }
     } else {
       announce(`${clicked} is not it. Play ${targetNote}.`);
       setSeqTotal((t) => t + 1);
       runQualifiesRef.current = false;
       if (fastEnough) recordSequenceMastery('miss');
-      reportScaleAttempt(false, bpm);
+      reportScaleAttempt(false);
     }
     },
     [phase, activeMode, scaleNotes, sequenceIndex, reportScaleAttempt, recordSequenceMastery, metronome.bpm, announce],
@@ -594,31 +603,20 @@ export default function EarTrainingView(): React.ReactElement {
   // ── Session start ──────────────────────────────────────────────────────────
 
   /**
-   * Begins a new 10-question session: resets all state, starts the backend
-   * session, and loads the first question.
+   * Begins a new 10-question session: resets all state and loads the first
+   * question.
    */
-  const startQuizSession = useCallback(async () => {
+  const startQuizSession = useCallback(() => {
     // Reset session state
     setEarTrainingScore(0);
     setEarTrainingTotal(0);
     setEarTrainingAnswers(Array(TOTAL_QUESTIONS).fill('pending'));
     setPhase('active');
     sessionStartTimeRef.current = Date.now();
-
-    // Start backend session (non-blocking)
-    try {
-      const session = await startSession([scaleKey], metronome.bpm);
-      backendSessionRef.current = session;
-    } catch {
-      backendSessionRef.current = null;
-    }
-
     loadQuestion(0, [], activeMode);
   }, [
     activeMode,
     loadQuestion,
-    scaleKey,
-    metronome.bpm,
     setEarTrainingScore,
     setEarTrainingTotal,
     setEarTrainingAnswers,
@@ -627,14 +625,14 @@ export default function EarTrainingView(): React.ReactElement {
   // ── Session end ────────────────────────────────────────────────────────────
 
   /**
-   * Finalises the session: awards XP, records practice minutes, ends the
-   * backend session, and transitions to the end screen.
+   * Finalises the session: awards XP, records practice minutes, logs the
+   * session to history, and transitions to the end screen.
    *
    * @param finalScore - Total correct answers.
    * @param finalTotal - Total questions answered.
    */
   const finishSession = useCallback(
-    async (finalScore: number, finalTotal: number) => {
+    (finalScore: number, finalTotal: number) => {
       setPhase('end');
       recordPracticeDay();
 
@@ -650,18 +648,9 @@ export default function EarTrainingView(): React.ReactElement {
         if (mins > 0) addPracticeMinutes(mins);
       }
 
-      // End backend session
-      if (backendSessionRef.current) {
-        const accuracy = finalTotal > 0 ? finalScore / finalTotal : undefined;
-        try {
-          await endSession(backendSessionRef.current.id, accuracy);
-        } catch {
-          // Silently ignore
-        }
-        backendSessionRef.current = null;
-      }
+      logFinishedSession(finalTotal > 0 ? finalScore / finalTotal : null);
     },
-    [addXP, addPracticeMinutes, recordPracticeDay],
+    [addXP, addPracticeMinutes, recordPracticeDay, logFinishedSession],
   );
 
   // ── Answer handler ─────────────────────────────────────────────────────────
@@ -713,7 +702,7 @@ export default function EarTrainingView(): React.ReactElement {
 
       // Record backend attempt for scales mode
       if (activeMode === 'scales') {
-        reportScaleAttempt(isCorrect, metronome.bpm);
+        reportScaleAttempt(isCorrect);
       }
 
       // After feedback delay, advance or end session
@@ -721,7 +710,7 @@ export default function EarTrainingView(): React.ReactElement {
         const nextIndex = currentQuestionIndex + 1;
         if (nextIndex >= TOTAL_QUESTIONS) {
           announce(`Session complete. ${newScore} of ${newTotal} correct.`);
-          void finishSession(newScore, newTotal);
+          finishSession(newScore, newTotal);
         } else {
           loadQuestion(
             nextIndex,
@@ -739,7 +728,6 @@ export default function EarTrainingView(): React.ReactElement {
       earTrainingAnswers,
       currentQuestionIndex,
       activeMode,
-      metronome.bpm,
       setEarTrainingScore,
       setEarTrainingTotal,
       setEarTrainingAnswers,
@@ -796,7 +784,7 @@ export default function EarTrainingView(): React.ReactElement {
   // ── Sequence mode start/stop ───────────────────────────────────────────────
 
   /** Starts a sequence mode session. */
-  const startSequenceSession = useCallback(async () => {
+  const startSequenceSession = useCallback(() => {
     setSeqScore(0);
     setSeqTotal(0);
     setSequenceIndex(0);
@@ -805,17 +793,10 @@ export default function EarTrainingView(): React.ReactElement {
     runQualifiesRef.current = true;
     sessionStartTimeRef.current = Date.now();
     setPhase('active');
-
-    try {
-      const session = await startSession([scaleKey], metronome.bpm);
-      backendSessionRef.current = session;
-    } catch {
-      backendSessionRef.current = null;
-    }
-  }, [scaleKey, metronome.bpm]);
+  }, []);
 
   /** Ends a sequence mode session. */
-  const endSequenceSession = useCallback(async () => {
+  const endSequenceSession = useCallback(() => {
     setPhase('end');
     if (seqTotal > 0) recordPracticeDay();
 
@@ -826,16 +807,9 @@ export default function EarTrainingView(): React.ReactElement {
       if (mins > 0) addPracticeMinutes(mins);
     }
 
-    const accuracy = seqTotal > 0 ? seqScore / seqTotal : undefined;
-    if (backendSessionRef.current) {
-      try {
-        await endSession(backendSessionRef.current.id, accuracy);
-      } catch {
-        // Silently ignore
-      }
-      backendSessionRef.current = null;
-    }
-  }, [seqScore, seqTotal, addPracticeMinutes, recordPracticeDay]);
+    if (seqTotal > 0) logFinishedSession(seqScore / seqTotal);
+    else sessionStartTimeRef.current = null;
+  }, [seqScore, seqTotal, addPracticeMinutes, recordPracticeDay, logFinishedSession]);
 
 
   // ── Render ─────────────────────────────────────────────────────────────────

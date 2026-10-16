@@ -2,8 +2,8 @@
  * useChordAI.ts
  *
  * Custom React hook encapsulating all state and business logic for the
- * ChordAI feature: API key management, audio capture, chord detection,
- * and multi-turn conversation with Anthropic Claude.
+ * ChordAI feature: audio capture, chord detection, and multi-turn
+ * conversation with Claude. The API key is shared app-wide (ai/apiKey.ts).
  *
  * Keeping logic here keeps ChordAI.tsx focused on rendering only.
  */
@@ -11,7 +11,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChordDetector } from '../audio/ChordDetector';
 import type { ChordDetectionResult } from '../audio/ChordDetector';
-import { recordChord } from '../services/api';
+import type Anthropic from '@anthropic-ai/sdk';
+import { useHistoryStore } from '../store/useHistoryStore';
+import { useApiKeyStore } from '../ai/apiKey';
+import { CLAUDE_MODEL, FALLBACK_BETA, createClaudeClient, describeClaudeError, isCancelledRequest } from '../ai/claude';
 
 // ─── Public Types ─────────────────────────────────────────────────────────────
 
@@ -29,13 +32,6 @@ export interface Progression {
 /** Genre options for progression generation. */
 export const GENRES = ['rock', 'jazz', 'blues', 'pop', 'country'] as const;
 export type Genre = (typeof GENRES)[number];
-
-// ─── Internal Types ───────────────────────────────────────────────────────────
-
-interface AnthropicRequestMessage {
-  role: 'user' | 'assistant';
-  content: string;
-}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -88,15 +84,8 @@ export function parseProgression(text: string): string[] | null {
  * All state and actions exposed by useChordAI.
  */
 export interface ChordAIState {
-  // API key
-  apiKey: string;
-  apiKeyInput: string;
-  showApiKey: boolean;
+  /** True once a key is set (shared with the Coach). */
   apiKeySet: boolean;
-  setApiKeyInput: (v: string) => void;
-  setShowApiKey: (v: boolean) => void;
-  handleSetApiKey: () => void;
-  handleClearApiKey: () => void;
 
   // Audio devices
   audioDevices: MediaDeviceInfo[];
@@ -139,16 +128,12 @@ export interface ChordAIState {
 /** Where an error came from: the microphone/detection step or the Claude API. */
 export type ErrorScope = 'listen' | 'api';
 
-/** Abort Claude requests that take longer than this. */
-const REQUEST_TIMEOUT_MS = 60_000;
-
 /**
- * Model for ChordAI. Claude Sonnet 5.5 thinks adaptively by default; thinking
- * counts toward max_tokens, so the cap leaves room for thinking plus the reply.
- * Effort 'low' is the recommended starting point for chat and content
- * generation, and keeps replies quick while you're holding the guitar.
+ * Claude Sonnet 5.5 thinks adaptively by default; thinking counts toward
+ * max_tokens, so the cap leaves room for thinking plus the reply. Effort
+ * 'low' is the recommended starting point for chat and content generation,
+ * and keeps replies quick while you're holding the guitar.
  */
-const CLAUDE_MODEL = 'claude-sonnet-5-5';
 const CLAUDE_MAX_TOKENS = 16_000;
 const CLAUDE_EFFORT = 'low';
 
@@ -176,33 +161,18 @@ function describeMicError(err: unknown): string {
   }
 }
 
-/** Maps an Anthropic API status code to a message with a next step. */
-function describeApiStatus(status: number, apiMessage?: string): string {
-  if (status === 401) return 'Anthropic rejected that API key. Clear it and set it again.';
-  if (status === 403) return "This API key doesn't have permission to use that model.";
-  if (status === 404) return `The requested model wasn't found${apiMessage ? ` (${apiMessage})` : ''}.`;
-  if (status === 413) return 'The conversation is too long to send. Reload to start a new one.';
-  if (status === 429) return 'Rate limited by Anthropic. Wait a moment, then try again.';
-  if (status === 529 || status >= 500) {
-    return `Anthropic's API is having trouble right now (${status}). Try again in a minute.`;
-  }
-  return apiMessage ? `Request failed: ${apiMessage}` : `Request failed (${status}).`;
-}
-
 /**
  * useChordAI hook.
  *
- * Manages all ChordAI business logic: API key storage (memory only),
- * microphone capture, chord detection, and Claude API conversation.
+ * Manages all ChordAI business logic: microphone capture, chord detection,
+ * and the Claude conversation.
  *
  * @returns ChordAIState — all state values and action handlers.
  */
 export function useChordAI(): ChordAIState {
-  // ── API key ──────────────────────────────────────────────────────────────
-  const [apiKey, setApiKey] = useState('');
-  const [apiKeyInput, setApiKeyInput] = useState('');
-  const [showApiKey, setShowApiKey] = useState(false);
-  const [apiKeySet, setApiKeySet] = useState(false);
+  // ── API key (shared app-wide) ────────────────────────────────────────────
+  const apiKey = useApiKeyStore((s) => s.apiKey);
+  const apiKeySet = apiKey !== '';
 
   // ── Audio devices ─────────────────────────────────────────────────────────
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
@@ -291,22 +261,6 @@ export function useChordAI(): ChordAIState {
 
   // ── Handlers ─────────────────────────────────────────────────────────────
 
-  /** Confirms the API key. Key is held in React state only — never persisted. */
-  const handleSetApiKey = () => {
-    const trimmed = apiKeyInput.trim();
-    if (!trimmed) return;
-    setApiKey(trimmed);
-    setApiKeySet(true);
-    setApiKeyInput('');
-  };
-
-  /** Removes the stored API key from memory. */
-  const handleClearApiKey = () => {
-    setApiKey('');
-    setApiKeySet(false);
-    setApiKeyInput('');
-  };
-
   /**
    * Captures audio from the selected input device for LISTEN_DURATION_MS,
    * runs chord detection, and stores the result in state.
@@ -382,14 +336,12 @@ export function useChordAI(): ChordAIState {
       const detected = detector.detectChord(chroma);
       setDetectedChord(detected);
 
-      // Persist the detection to the backend (fire-and-forget)
-      recordChord(
-        detected.chord,
-        detected.confidence,
-        detected.root,
-        detected.quality,
-      ).catch(() => {
-        // Backend unreachable — silently continue
+      // Keep it in this browser's chord log (Progress > Chords)
+      useHistoryStore.getState().logChord({
+        chord: detected.chord,
+        root: detected.root,
+        quality: detected.quality,
+        confidence: detected.confidence,
       });
     } catch (err: unknown) {
       fail('listen', describeMicError(err));
@@ -409,91 +361,51 @@ export function useChordAI(): ChordAIState {
   };
 
   /**
-   * Calls the Anthropic Messages API with the given conversation history.
+   * Sends the conversation to Claude and returns the reply text.
    *
-   * The `anthropic-dangerous-direct-browser-access` header acknowledges
-   * that this is a direct browser-to-API call (no server proxy).
-   *
-   * @param msgs - Messages to send.
+   * @param msgs - Conversation so far (text only, so no thinking blocks are
+   *   replayed and earlier turns can't trip the preserved-thinking check).
    * @returns Assistant response text.
-   * @throws Error if the API returns a non-OK response.
+   * @throws A readable Error, or the SDK's abort error when cancelled.
    */
-  const callClaude = async (msgs: AnthropicRequestMessage[]): Promise<string> => {
+  const callClaude = async (msgs: Message[]): Promise<string> => {
     requestRef.current?.abort();
     const controller = new AbortController();
     requestRef.current = controller;
-    const timeout = setTimeout(() => controller.abort(new DOMException('timeout', 'TimeoutError')), REQUEST_TIMEOUT_MS);
 
-    let response: Response;
+    let response: Anthropic.Beta.BetaMessage;
     try {
-      response = await fetch('https://api.anthropic.com/v1/messages', {
-      signal: controller.signal,
-      method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-        'anthropic-dangerous-direct-browser-access': 'true',
-        // Server-side refusal fallback: a declined request is retried on the
-        // model Anthropic recommends for that refusal category.
-        'anthropic-beta': 'server-side-fallback-2026-07-01',
-      },
-      body: JSON.stringify({
-        model: CLAUDE_MODEL,
-        max_tokens: CLAUDE_MAX_TOKENS,
-        output_config: { effort: CLAUDE_EFFORT },
-        fallbacks: 'default',
-        system: SYSTEM_PROMPT,
-        // History carries text only. No thinking blocks are replayed, so
-        // earlier turns can't trip the preserved-thinking history check.
-        messages: msgs,
-      }),
-    });
-    } catch {
-      clearTimeout(timeout);
-      if (controller.signal.aborted) {
-        const reason = controller.signal.reason;
-        if (reason instanceof DOMException && reason.name === 'TimeoutError') {
-          throw new Error('Anthropic took too long to respond. Try again.');
-        }
-        throw new DOMException('Request cancelled', 'AbortError');
-      }
-      // fetch only rejects on network failure (offline, DNS, CORS)
-      throw new Error("Couldn't reach Anthropic. Check your internet connection and try again.");
+      response = await createClaudeClient(apiKey).beta.messages.create(
+        {
+          model: CLAUDE_MODEL,
+          max_tokens: CLAUDE_MAX_TOKENS,
+          output_config: { effort: CLAUDE_EFFORT },
+          betas: [FALLBACK_BETA],
+          fallbacks: 'default',
+          system: SYSTEM_PROMPT,
+          messages: msgs,
+        },
+        { signal: controller.signal },
+      );
+    } catch (err) {
+      if (isCancelledRequest(err)) throw err;
+      throw new Error(describeClaudeError(err));
     }
-    clearTimeout(timeout);
-
-    // Error bodies are usually JSON, but proxies and outages can return HTML
-    let data: unknown = null;
-    try {
-      data = await response.json();
-    } catch {
-      // keep data null; the status code still tells us what happened
-    }
-
-    if (!response.ok) {
-      const errData = data as { error?: { message?: string } } | null;
-      throw new Error(describeApiStatus(response.status, errData?.error?.message));
-    }
-    const body = data as {
-      stop_reason?: string;
-      content?: Array<{ type?: string; text?: string }>;
-    } | null;
 
     // A safety decline is a normal 200; check it before reading content
-    if (body?.stop_reason === 'refusal') {
+    if (response.stop_reason === 'refusal') {
       throw new Error('Claude declined this request. Try rephrasing it.');
     }
 
     // Responses can include thinking (and fallback) blocks; read text blocks by type
-    const text = (body?.content ?? [])
-      .filter(block => block.type === 'text' && typeof block.text === 'string')
-      .map(block => block.text)
+    const text = response.content
+      .filter((block): block is Anthropic.Beta.BetaTextBlock => block.type === 'text')
+      .map((block) => block.text)
       .join('')
       .trim();
     if (!text) {
       throw new Error(
-        body?.stop_reason === 'max_tokens'
+        response.stop_reason === 'max_tokens'
           ? 'Claude ran out of room before answering. Try again.'
           : 'Claude returned an empty response. Try again.',
       );
@@ -502,7 +414,7 @@ export function useChordAI(): ChordAIState {
   };
 
   /** True for a request we cancelled ourselves (unmount or superseded), which shouldn't show an error. */
-  const isCancelled = (err: unknown) => err instanceof DOMException && err.name === 'AbortError';
+  const isCancelled = isCancelledRequest;
 
   /**
    * Generates an initial chord progression from the detected chord and genre.
@@ -570,14 +482,7 @@ export function useChordAI(): ChordAIState {
   };
 
   return {
-    apiKey,
-    apiKeyInput,
-    showApiKey,
     apiKeySet,
-    setApiKeyInput,
-    setShowApiKey: (v: boolean) => setShowApiKey(v),
-    handleSetApiKey,
-    handleClearApiKey,
 
     audioDevices,
     selectedDevice,

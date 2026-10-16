@@ -1,7 +1,7 @@
 /**
  * SideNav.test.tsx
  *
- * The desktop/tablet navigation and the phone tab bar: all five
+ * The desktop/tablet navigation and the phone tab bar: all six
  * destinations render, the current one is marked aria-current="page", legacy
  * tab ids resolve to their destination, and clicks set the store's tab.
  */
@@ -27,10 +27,10 @@ beforeEach(() => {
   mockState.activeTab = 'fretboard';
 });
 
-const DESTINATIONS = ['Practice', 'Ear training', 'ChordAI', 'Library', 'Progress'];
+const DESTINATIONS = ['Practice', 'Ear training', 'ChordAI', 'Coach', 'Library', 'Progress'];
 
 describe('SideNav', () => {
-  it('renders a navigation landmark with all five destinations', () => {
+  it('renders a navigation landmark with all six destinations', () => {
     render(<SideNav />);
     const nav = screen.getByRole('navigation', { name: 'Main navigation' });
     for (const label of DESTINATIONS) {
@@ -63,7 +63,7 @@ describe('SideNav', () => {
 });
 
 describe('MobileTabBar', () => {
-  it('renders all five destinations and switches on click', () => {
+  it('renders all six destinations and switches on click', () => {
     render(<MobileTabBar />);
     for (const label of DESTINATIONS) expect(screen.getByRole('button', { name: label })).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: 'ChordAI' }));

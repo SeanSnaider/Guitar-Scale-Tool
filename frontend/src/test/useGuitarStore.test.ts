@@ -8,6 +8,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useGuitarStore } from '../store/useGuitarStore';
+import { localDayKey } from '../store/progress';
 
 /** Snapshot of the initial default state values that we reset to before each test. */
 const INITIAL_STATE_PATCH = {
@@ -268,9 +269,10 @@ describe('incrementStreak', () => {
     expect(useGuitarStore.getState().userStats.longestStreak).toBeGreaterThanOrEqual(1);
   });
 
-  it('sets lastPracticeDate to today (ISO string)', () => {
+  it('sets lastPracticeDate to today (local calendar day)', () => {
     useGuitarStore.getState().incrementStreak();
-    const today = new Date().toISOString().split('T')[0];
+    // Local, not UTC: toISOString() would be tomorrow's date in the evening west of Greenwich
+    const today = localDayKey();
     expect(useGuitarStore.getState().userStats.lastPracticeDate).toBe(today);
   });
 

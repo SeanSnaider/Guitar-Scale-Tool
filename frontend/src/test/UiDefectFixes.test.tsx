@@ -8,27 +8,13 @@
  *   - Re-pressing the active exercise type keeps the session; question audio
  *     plays the full scale and stops when the view goes away
  *
- * The backend is mocked as unreachable throughout: every API call rejects,
- * which is the normal state now that the server is optional.
+ * There is no server: history lives in useHistoryStore, reset per test.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import { useGuitarStore } from '../store/useGuitarStore';
+import { useHistoryStore } from '../store/useHistoryStore';
 import { SCALES } from '../data/musicTheory';
-
-vi.mock('../services/api', () => {
-  const down = () => Promise.reject(new TypeError('Failed to fetch'));
-  return {
-    startSession: vi.fn(down),
-    endSession: vi.fn(down),
-    recordScaleAttempt: vi.fn(down),
-    listSessions: vi.fn(down),
-    listChords: vi.fn(down),
-    getAllMastery: vi.fn(down),
-    getChordStats: vi.fn(down),
-    getBackendStats: vi.fn(down),
-  };
-});
 
 vi.mock('../audio/AudioEngine', () => ({
   audioEngine: { playNote: vi.fn(), playNoteAtPosition: vi.fn() },
@@ -45,10 +31,12 @@ import ScalesBrowser from '../components/ScalesBrowser';
 import Tablature from '../components/Tablature';
 
 const initialState = useGuitarStore.getInitialState();
+const initialHistory = useHistoryStore.getInitialState();
 
 beforeEach(() => {
   localStorage.clear();
   useGuitarStore.setState(initialState, true);
+  useHistoryStore.setState(initialHistory, true);
   vi.mocked(audioEngine.playNote).mockClear();
 });
 
@@ -136,7 +124,6 @@ describe('Sequence mastery is tracked locally', () => {
 describe('Progress learned tab', () => {
   async function renderLearnedTab() {
     render(<ProgressDashboard />);
-    // Let the (rejected) backend fetch settle
     await act(async () => {});
     fireEvent.click(screen.getByRole('button', { name: 'Learned' }));
   }

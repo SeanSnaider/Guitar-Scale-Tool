@@ -1,4 +1,4 @@
-import { AudioWaveform, ChartNoAxesColumn, Ear, Guitar, LibraryBig } from 'lucide-react';
+import { AudioWaveform, ChartNoAxesColumn, Ear, Guitar, LibraryBig, ListChecks } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { TabId } from '../../store/useGuitarStore';
 
@@ -13,11 +13,12 @@ export interface NavItem {
   group: 'practice' | 'reference';
 }
 
-/** The five destinations, in nav order. */
+/** The six destinations, in nav order. */
 export const NAV_ITEMS: NavItem[] = [
   { id: 'fretboard', label: 'Practice', icon: Guitar, matches: ['fretboard', 'reference'], group: 'practice' },
   { id: 'ear-training', label: 'Ear training', icon: Ear, matches: ['ear-training'], group: 'practice' },
   { id: 'chordai', label: 'ChordAI', icon: AudioWaveform, matches: ['chordai'], group: 'practice' },
+  { id: 'coach', label: 'Coach', icon: ListChecks, matches: ['coach'], group: 'practice' },
   { id: 'library', label: 'Library', icon: LibraryBig, matches: ['library', 'scales', 'chords'], group: 'reference' },
   { id: 'progress', label: 'Progress', icon: ChartNoAxesColumn, matches: ['progress'], group: 'reference' },
 ];
